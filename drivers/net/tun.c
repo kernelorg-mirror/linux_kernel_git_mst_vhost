@@ -521,7 +521,6 @@ static void tun_net_init(struct net_device *dev)
 		/* Zero header length */
 		dev->type = ARPHRD_NONE;
 		dev->flags = IFF_POINTOPOINT | IFF_NOARP | IFF_MULTICAST;
-		dev->tx_queue_len = TUN_READQ_SIZE;  /* We prefer our own queue length */
 		break;
 
 	case TUN_TAP_DEV:
@@ -531,10 +530,9 @@ static void tun_net_init(struct net_device *dev)
 		dev->priv_flags &= ~IFF_TX_SKB_SHARING;
 
 		eth_hw_addr_random(dev);
-
-		dev->tx_queue_len = TUN_READQ_SIZE;  /* We prefer our own queue length */
 		break;
 	}
+	dev->tx_queue_len = 0;  /* Disable qdisc queueing */
 }
 
 /* Character device part */
@@ -1142,6 +1140,12 @@ static int tun_set_iff(struct net *net, struct file *file, struct ifreq *ifr)
 		err = register_netdevice(tun->dev);
 		if (err < 0)
 			goto err_free_sk;
+
+		/*
+		 * We (ab)use queue length to limit our amount of buffering.
+		 * Set our own default queue length.
+		 */
+		dev->tx_queue_len = TUN_READQ_SIZE;
 
 		if (device_create_file(&tun->dev->dev, &dev_attr_tun_flags) ||
 		    device_create_file(&tun->dev->dev, &dev_attr_owner) ||
