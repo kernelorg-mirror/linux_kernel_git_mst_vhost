@@ -26,10 +26,12 @@
 #if __GNUC__ < 4 || (__GNUC__ == 4 && __GNUC_MINOR__ < 1)
 /* Technically wrong, but this avoids compilation errors on some gcc
    versions. */
-#define BITOP_ADDR(x) "=m" (*(volatile long *) (x))
+#define BITOP_ADDR_CONSTRAINT "=m"
 #else
-#define BITOP_ADDR(x) "+m" (*(volatile long *) (x))
+#define BITOP_ADDR_CONSTRAINT "+m"
 #endif
+
+#define BITOP_ADDR(x) BITOP_ADDR_CONSTRAINT (*(volatile long *) (x))
 
 #define ADDR				BITOP_ADDR(addr)
 

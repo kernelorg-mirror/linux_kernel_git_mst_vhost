@@ -39,6 +39,8 @@
 #include <asm/desc.h>
 #include <asm/tlbflush.h>
 #include <asm/idle.h>
+#include <asm/apic.h>
+#include <asm/apicdef.h>
 
 static int kvmapf = 1;
 
@@ -290,6 +292,27 @@ static void kvm_register_steal_time(void)
 		cpu, __pa(st));
 }
 
+static DEFINE_PER_CPU(u16, kvm_apic_eoi) __aligned(2) = 0;
+
+/* Our own copy of __test_and_clear_bit to make sure
+ * it is done with a single instruction */
+static inline int kvm_test_and_clear_bit(int nr, volatile u16* addr)
+{
+	int oldbit;
+
+	asm volatile("btr %2,%1\n\t"
+		     "sbb %0,%0"
+		     : "=r" (oldbit), BITOP_ADDR_CONSTRAINT(*addr) : "Ir" (nr));
+	return oldbit;
+}
+
+static void kvm_guest_apic_eoi_write(u32 reg, u32 val)
+{
+	if (kvm_test_and_clear_bit(0, &__get_cpu_var(kvm_apic_eoi)))
+		return;
+	apic->write(APIC_EOI, APIC_EOI_ACK);
+}
+
 void __cpuinit kvm_guest_cpu_init(void)
 {
 	if (!kvm_para_available())
@@ -307,11 +330,17 @@ void __cpuinit kvm_guest_cpu_init(void)
 		       smp_processor_id());
 	}
 
+	if (kvm_para_has_feature(KVM_FEATURE_EOI)) {
+		__get_cpu_var(kvm_apic_eoi) = 0;
+		wrmsrl(MSR_KVM_EOI_EN, __pa(&__get_cpu_var(kvm_apic_eoi)) |
+		       KVM_MSR_ENABLED);
+	}
+
 	if (has_steal_clock)
 		kvm_register_steal_time();
 }
 
-static void kvm_pv_disable_apf(void *unused)
+static void kvm_pv_disable_apf(void)
 {
 	if (!__get_cpu_var(apf_reason).enabled)
 		return;
@@ -323,11 +352,18 @@ static void kvm_pv_disable_apf(void *unused)
 	       smp_processor_id());
 }
 
+static void kvm_pv_guest_cpu_reboot(void *unused)
+{
+	if (kvm_para_has_feature(KVM_FEATURE_EOI))
+		wrmsrl(MSR_KVM_EOI_EN, 0);
+	kvm_pv_disable_apf();
+}
+
 static int kvm_pv_reboot_notify(struct notifier_block *nb,
 				unsigned long code, void *unused)
 {
 	if (code == SYS_RESTART)
-		on_each_cpu(kvm_pv_disable_apf, NULL, 1);
+		on_each_cpu(kvm_pv_guest_cpu_reboot, NULL, 1);
 	return NOTIFY_DONE;
 }
 
@@ -378,7 +414,9 @@ static void __cpuinit kvm_guest_cpu_online(void *dummy)
 static void kvm_guest_cpu_offline(void *dummy)
 {
 	kvm_disable_steal_time();
-	kvm_pv_disable_apf(NULL);
+	if (kvm_para_has_feature(KVM_FEATURE_EOI))
+		wrmsrl(MSR_KVM_EOI_EN, 0);
+	kvm_pv_disable_apf();
 	apf_task_wake_all();
 }
 
@@ -429,6 +467,16 @@ void __init kvm_guest_init(void)
 	if (kvm_para_has_feature(KVM_FEATURE_STEAL_TIME)) {
 		has_steal_clock = 1;
 		pv_time_ops.steal_clock = kvm_steal_clock;
+	}
+
+	if (kvm_para_has_feature(KVM_FEATURE_EOI)) {
+		struct apic **drv;
+
+		for (drv = __apicdrivers; drv < __apicdrivers_end; drv++) {
+			/* Should happen once for each apic */
+			WARN_ON((*drv)->eoi_write == kvm_guest_apic_eoi_write);
+			(*drv)->eoi_write = kvm_guest_apic_eoi_write;
+		}
 	}
 
 #ifdef CONFIG_SMP
