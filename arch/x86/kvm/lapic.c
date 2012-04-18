@@ -270,6 +270,54 @@ int kvm_apic_set_irq(struct kvm_vcpu *vcpu, struct kvm_lapic_irq *irq)
 			irq->level, irq->trig_mode);
 }
 
+static int eoi_put_user(struct kvm_vcpu *vcpu, u8 val)
+{
+
+	return kvm_write_guest_cached(vcpu->kvm, &vcpu->arch.eoi.data, &val,
+				      sizeof(val));
+}
+
+static int eoi_get_user(struct kvm_vcpu *vcpu, u8 *val)
+{
+
+	return kvm_read_guest_cached(vcpu->kvm, &vcpu->arch.eoi.data, val,
+				      sizeof(*val));
+}
+
+static inline bool eoi_enabled(struct kvm_vcpu *vcpu)
+{
+	return vcpu->arch.eoi.msr_val & KVM_MSR_ENABLED;
+}
+
+static bool eoi_get_pending(struct kvm_vcpu *vcpu)
+{
+	u8 val;
+	if (eoi_get_user(vcpu, &val) < 0)
+		apic_debug("Can't read EOI MSR value: 0x%llx\n",
+			   (unsigned long long)vcpi->arch.eoi.msr_val);
+	return val & 0x1;
+}
+
+static void eoi_set_pending(struct kvm_vcpu *vcpu)
+{
+	if (eoi_put_user(vcpu, 0x1) < 0) {
+		apic_debug("Can't set EOI MSR value: 0x%llx\n",
+			   (unsigned long long)vcpi->arch.eoi.msr_val);
+		return;
+	}
+	__set_bit(KVM_APIC_EOI_PENDING, &vcpu->arch.apic_attention);
+}
+
+static void eoi_clr_pending(struct kvm_vcpu *vcpu)
+{
+	if (eoi_put_user(vcpu, 0x0) < 0) {
+		apic_debug("Can't clear EOI MSR value: 0x%llx\n",
+			   (unsigned long long)vcpi->arch.eoi.msr_val);
+		return;
+	}
+	__clear_bit(KVM_APIC_EOI_PENDING, &vcpu->arch.apic_attention);
+}
+
 static inline int apic_find_highest_isr(struct kvm_lapic *apic)
 {
 	int result;
@@ -482,16 +530,21 @@ int kvm_apic_compare_prio(struct kvm_vcpu *vcpu1, struct kvm_vcpu *vcpu2)
 	return vcpu1->arch.apic_arb_prio - vcpu2->arch.apic_arb_prio;
 }
 
-static void apic_set_eoi(struct kvm_lapic *apic)
+static int apic_set_eoi(struct kvm_lapic *apic)
 {
 	int vector = apic_find_highest_isr(apic);
+
+	trace_kvm_native_eoi(apic, vector);
+
 	/*
 	 * Not every write EOI will has corresponding ISR,
 	 * one example is when Kernel check timer on setup_IO_APIC
 	 */
 	if (vector == -1)
-		return;
+		return vector;
 
+	if (eoi_enabled(apic->vcpu))
+		eoi_clr_pending(apic->vcpu);
 	apic_clear_vector(vector, apic->regs + APIC_ISR);
 	apic_update_ppr(apic);
 
@@ -505,6 +558,7 @@ static void apic_set_eoi(struct kvm_lapic *apic)
 		kvm_ioapic_update_eoi(apic->vcpu->kvm, vector, trigger_mode);
 	}
 	kvm_make_request(KVM_REQ_EVENT, apic->vcpu);
+	return vector;
 }
 
 static void apic_send_ipi(struct kvm_lapic *apic)
@@ -1085,6 +1139,7 @@ void kvm_lapic_reset(struct kvm_vcpu *vcpu)
 	atomic_set(&apic->lapic_timer.pending, 0);
 	if (kvm_vcpu_is_bsp(vcpu))
 		vcpu->arch.apic_base |= MSR_IA32_APICBASE_BSP;
+	vcpu->arch.eoi.msr_val = 0;
 	apic_update_ppr(apic);
 
 	vcpu->arch.apic_arb_prio = 0;
@@ -1211,9 +1266,10 @@ int kvm_apic_has_interrupt(struct kvm_vcpu *vcpu)
 
 	apic_update_ppr(apic);
 	highest_irr = apic_find_highest_irr(apic);
-	if ((highest_irr == -1) ||
-	    ((highest_irr & 0xF0) <= apic_get_reg(apic, APIC_PROCPRI)))
+	if (highest_irr == -1)
 		return -1;
+	if (((highest_irr & 0xF0) <= apic_get_reg(apic, APIC_PROCPRI)))
+		return -2;
 	return highest_irr;
 }
 
@@ -1245,8 +1301,19 @@ int kvm_get_apic_interrupt(struct kvm_vcpu *vcpu)
 	int vector = kvm_apic_has_interrupt(vcpu);
 	struct kvm_lapic *apic = vcpu->arch.apic;
 
-	if (vector == -1)
+	/* Detect interrupt nesting and disable EOI optimization */
+	if (eoi_enabled(vcpu) && vector == -2)
+		eoi_clr_pending(vcpu);
+
+	if (vector < 0)
 		return -1;
+
+	if (eoi_enabled(vcpu)) {
+		if (kvm_ioapic_handles_vector(vcpu->kvm, vector))
+			eoi_clr_pending(vcpu);
+		else
+			eoi_set_pending(vcpu);
+	}
 
 	apic_set_vector(vector, apic->regs + APIC_ISR);
 	apic_update_ppr(apic);
@@ -1262,6 +1329,14 @@ void kvm_apic_post_state_restore(struct kvm_vcpu *vcpu)
 			     MSR_IA32_APICBASE_BASE;
 	kvm_apic_set_version(vcpu);
 
+	if (eoi_enabled(apic->vcpu)) {
+		if (eoi_get_pending(apic->vcpu))
+			__set_bit(KVM_APIC_EOI_PENDING,
+				  &vcpu->arch.apic_attention);
+		else
+			__clear_bit(KVM_APIC_EOI_PENDING,
+				    &vcpu->arch.apic_attention);
+	}
 	apic_update_ppr(apic);
 	hrtimer_cancel(&apic->lapic_timer.timer);
 	update_divide_count(apic);
@@ -1283,10 +1358,24 @@ void __kvm_migrate_apic_timer(struct kvm_vcpu *vcpu)
 		hrtimer_start_expires(timer, HRTIMER_MODE_ABS);
 }
 
+static void apic_update_eoi(struct kvm_lapic *apic)
+{
+	int vector;
+	BUG_ON(!eoi_enabled(apic->vcpu));
+	if (eoi_get_pending(apic->vcpu))
+		return;
+	__clear_bit(KVM_APIC_EOI_PENDING, &apic->vcpu->arch.apic_attention);
+	vector = apic_set_eoi(apic);
+	trace_kvm_pv_eoi(apic, vector);
+}
+
 void kvm_lapic_sync_from_vapic(struct kvm_vcpu *vcpu)
 {
 	u32 data;
 	void *vapic;
+
+	if (test_bit(KVM_APIC_EOI_PENDING, &vcpu->arch.apic_attention))
+		apic_update_eoi(vcpu->arch.apic);
 
 	if (!test_bit(KVM_APIC_CHECK_VAPIC, &vcpu->arch.apic_attention))
 		return;
@@ -1392,5 +1481,15 @@ int kvm_hv_vapic_msr_read(struct kvm_vcpu *vcpu, u32 reg, u64 *data)
 
 	*data = (((u64)high) << 32) | low;
 
+	return 0;
+}
+
+int kvm_pv_enable_apic_eoi(struct kvm_vcpu *vcpu, u64 data)
+{
+	u64 addr = data & ~KVM_MSR_ENABLED;
+	if (eoi_enabled(vcpu))
+		eoi_clr_pending(vcpu);
+	vcpu->arch.eoi.msr_val = data;
+	kvm_gfn_to_hva_cache_init(vcpu->kvm, &vcpu->arch.eoi.data, addr);
 	return 0;
 }

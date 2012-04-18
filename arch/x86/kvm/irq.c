@@ -48,7 +48,7 @@ int kvm_cpu_has_interrupt(struct kvm_vcpu *v)
 	if (!irqchip_in_kernel(v->kvm))
 		return v->arch.interrupt.pending;
 
-	if (kvm_apic_has_interrupt(v) == -1) {	/* LAPIC */
+	if (kvm_apic_has_interrupt(v) < 0) {	/* LAPIC */
 		if (kvm_apic_accept_pic_intr(v)) {
 			s = pic_irqchip(v->kvm);	/* PIC */
 			return s->output;

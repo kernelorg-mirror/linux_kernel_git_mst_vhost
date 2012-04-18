@@ -174,6 +174,7 @@ enum {
 
 /* apic attention bits */
 #define KVM_APIC_CHECK_VAPIC	0
+#define KVM_APIC_EOI_PENDING	1
 
 /*
  * We don't want allocation failures within the mmu code, so we preallocate
@@ -485,6 +486,11 @@ struct kvm_vcpu_arch {
 		u64 length;
 		u64 status;
 	} osvw;
+
+	struct {
+		u64 msr_val;
+		struct gfn_to_hva_cache data;
+	} eoi;
 };
 
 struct kvm_lpage_info {
