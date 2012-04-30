@@ -310,7 +310,7 @@ static void kvm_guest_apic_eoi_write(u32 reg, u32 val)
 {
 	if (kvm_test_and_clear_bit(0, &__get_cpu_var(kvm_apic_eoi)))
 		return;
-	apic->write(APIC_EOI, APIC_EOI_ACK);
+	apic->safe_eoi_write(APIC_EOI, APIC_EOI_ACK);
 }
 
 void __cpuinit kvm_guest_cpu_init(void)

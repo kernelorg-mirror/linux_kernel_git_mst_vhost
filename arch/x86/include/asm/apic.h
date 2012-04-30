@@ -357,12 +357,12 @@ struct apic {
 	u32 (*read)(u32 reg);
 	void (*write)(u32 reg, u32 v);
         /*
-	 * eoi_write has the same signature as write.
-	 * Drivers can support both eoi_write and write by passing the same
-	 * callback value. Kernel can override eoi_write and fall back
-	 * on write for EOI.
+	 * eoi_write, safe_eoi_write and write have the same signature.
+	 * Drivers can support them all by passing the same callback value.
+	 * reg and v will be set to APIC_EOI and APIC_EOI_ACK, respectively.
 	 */
 	void (*eoi_write)(u32 reg, u32 v);
+	void (*safe_eoi_write)(u32 reg, u32 v);
 	u64 (*icr_read)(void);
 	void (*icr_write)(u32 low, u32 high);
 	void (*wait_icr_idle)(void);
