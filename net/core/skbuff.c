@@ -353,6 +353,23 @@ struct sk_buff *dev_alloc_skb(unsigned int length)
 }
 EXPORT_SYMBOL(dev_alloc_skb);
 
+void skb_frag_destructor_ref(struct skb_frag_destructor *destroy)
+{
+	BUG_ON(destroy == NULL);
+	atomic_inc(&destroy->ref);
+}
+EXPORT_SYMBOL(skb_frag_destructor_ref);
+
+void skb_frag_destructor_unref(struct skb_frag_destructor *destroy)
+{
+	if (destroy == NULL)
+		return;
+
+	if (atomic_dec_and_test(&destroy->ref))
+		destroy->destroy(destroy);
+}
+EXPORT_SYMBOL(skb_frag_destructor_unref);
+
 static void skb_drop_list(struct sk_buff **listp)
 {
 	struct sk_buff *list = *listp;
@@ -2316,6 +2333,7 @@ int skb_shift(struct sk_buff *tgt, struct sk_buff *skb, int shiftlen)
 	 */
 	if (!to ||
 	    !skb_can_coalesce(tgt, to, skb_frag_page(fragfrom),
+			      fragfrom->page.destructor,
 			      fragfrom->page_offset)) {
 		merge = -1;
 	} else {

@@ -168,9 +168,15 @@ struct sk_buff;
 
 typedef struct skb_frag_struct skb_frag_t;
 
+struct skb_frag_destructor {
+	atomic_t ref;
+	int (*destroy)(struct skb_frag_destructor *destructor);
+};
+
 struct skb_frag_struct {
 	struct {
 		struct page *p;
+		struct skb_frag_destructor *destructor;
 	} page;
 #if (BITS_PER_LONG > 32) || (PAGE_SIZE >= 65536)
 	__u32 page_offset;
@@ -1242,6 +1248,31 @@ static inline int skb_pagelen(const struct sk_buff *skb)
 }
 
 /**
+ * skb_frag_set_destructor - set destructor for a paged fragment
+ * @skb: buffer containing fragment to be initialised
+ * @i: paged fragment index to initialise
+ * @destroy: the destructor to use for this fragment
+ *
+ * Sets @destroy as the destructor to be called when all references to
+ * the frag @i in @skb (tracked over skb_clone, retransmit, pull-ups,
+ * etc) are released.
+ *
+ * When a destructor is set then reference counting is performed on
+ * @destroy->ref. When the ref reaches zero then @destroy->destroy
+ * will be called. The caller is responsible for holding and managing
+ * any other references (such a the struct page reference count).
+ *
+ * This function must be called before any use of skb_frag_ref() or
+ * skb_frag_unref().
+ */
+static inline void skb_frag_set_destructor(struct sk_buff *skb, int i,
+					   struct skb_frag_destructor *destroy)
+{
+	skb_frag_t *frag = &skb_shinfo(skb)->frags[i];
+	frag->page.destructor = destroy;
+}
+
+/**
  * __skb_fill_page_desc - initialise a paged fragment in an skb
  * @skb: buffer containing fragment to be initialised
  * @i: paged fragment index to initialise
@@ -1260,6 +1291,7 @@ static inline void __skb_fill_page_desc(struct sk_buff *skb, int i,
 	skb_frag_t *frag = &skb_shinfo(skb)->frags[i];
 
 	frag->page.p		  = page;
+	frag->page.destructor     = NULL;
 	frag->page_offset	  = off;
 	skb_frag_size_set(frag, size);
 }
@@ -1776,6 +1808,9 @@ static inline struct page *skb_frag_page(const skb_frag_t *frag)
 	return frag->page.p;
 }
 
+extern void skb_frag_destructor_ref(struct skb_frag_destructor *destroy);
+extern void skb_frag_destructor_unref(struct skb_frag_destructor *destroy);
+
 /**
  * __skb_frag_ref - take an addition reference on a paged fragment.
  * @frag: the paged fragment
@@ -1784,6 +1819,10 @@ static inline struct page *skb_frag_page(const skb_frag_t *frag)
  */
 static inline void __skb_frag_ref(skb_frag_t *frag)
 {
+	if (unlikely(frag->page.destructor)) {
+		skb_frag_destructor_ref(frag->page.destructor);
+		return;
+	}
 	get_page(skb_frag_page(frag));
 }
 
@@ -1807,6 +1846,10 @@ static inline void skb_frag_ref(struct sk_buff *skb, int f)
  */
 static inline void __skb_frag_unref(skb_frag_t *frag)
 {
+	if (unlikely(frag->page.destructor)) {
+		skb_frag_destructor_unref(frag->page.destructor);
+		return;
+	}
 	put_page(skb_frag_page(frag));
 }
 
@@ -2004,13 +2047,16 @@ static inline int skb_add_data(struct sk_buff *skb,
 }
 
 static inline bool skb_can_coalesce(struct sk_buff *skb, int i,
-				    const struct page *page, int off)
+				    const struct page *page,
+				    const struct skb_frag_destructor *destroy,
+				    int off)
 {
 	if (i) {
 		const struct skb_frag_struct *frag = &skb_shinfo(skb)->frags[i - 1];
 
 		return page == skb_frag_page(frag) &&
-		       off == frag->page_offset + skb_frag_size(frag);
+		       off == frag->page_offset + skb_frag_size(frag) &&
+		       frag->page.destructor == destroy;
 	}
 	return false;
 }

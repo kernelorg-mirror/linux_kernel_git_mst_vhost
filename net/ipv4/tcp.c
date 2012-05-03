@@ -871,7 +871,7 @@ new_segment:
 			copy = size;
 
 		i = skb_shinfo(skb)->nr_frags;
-		can_coalesce = skb_can_coalesce(skb, i, page, offset);
+		can_coalesce = skb_can_coalesce(skb, i, page, NULL, offset);
 		if (!can_coalesce && i >= MAX_SKB_FRAGS) {
 			tcp_mark_push(tp, skb);
 			goto new_segment;
@@ -1125,7 +1125,7 @@ new_segment:
 
 				off = sk->sk_sndmsg_off;
 
-				if (skb_can_coalesce(skb, i, page, off) &&
+				if (skb_can_coalesce(skb, i, page, NULL, off) &&
 				    off != PAGE_SIZE) {
 					/* We can extend the last page
 					 * fragment. */
