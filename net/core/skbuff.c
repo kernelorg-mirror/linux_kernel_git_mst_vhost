@@ -149,8 +149,15 @@ static void skb_shinfo_init(struct sk_buff *skb)
 {
 	struct skb_shared_info *shinfo = skb_shinfo(skb);
 
+	/* Ensure that nr_frags->frags[0] (at least) fits into a
+	 * single cache line. */
+	BUILD_BUG_ON((offsetof(struct skb_shared_info, frags[1])
+		      - offsetof(struct skb_shared_info, nr_frags)) > 64);
+
 	/* make sure we initialize shinfo sequentially */
-	memset(shinfo, 0, offsetof(struct skb_shared_info, dataref));
+	memset(&shinfo->nr_frags, 0,
+	       offsetof(struct skb_shared_info, dataref)
+	       - offsetof(struct skb_shared_info, nr_frags));
 	atomic_set(&shinfo->dataref, 1);
 	kmemcheck_annotate_variable(shinfo->destructor_arg);
 }

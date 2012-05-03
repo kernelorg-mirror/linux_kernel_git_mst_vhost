@@ -41,19 +41,24 @@
 
 #define SKB_DATA_ALIGN(X)	(((X) + (SMP_CACHE_BYTES - 1)) & \
 				 ~(SMP_CACHE_BYTES - 1))
-/* maximum data size which can fit into an allocation of X bytes */
-#define SKB_WITH_OVERHEAD(X)	\
-	((X) - SKB_DATA_ALIGN(sizeof(struct skb_shared_info)))
+
 /*
- * minimum allocation size required for an skb containing X bytes of data
- *
- * We do our best to align skb_shared_info on a separate cache
- * line. It usually works because kmalloc(X > SMP_CACHE_BYTES) gives
- * aligned memory blocks, unless SLUB/SLAB debug is enabled.  Both
- * skb->head and skb_shared_info are cache line aligned.
+ * We do our best to align the hot members of skb_shared_info on a
+ * separate cache line.  We explicitly align the nr_frags field and
+ * arrange that the order of the fields in skb_shared_info is such
+ * that the interesting fields are nr_frags onwards and are therefore
+ * cache line aligned.
  */
-#define SKB_ALLOCSIZE(X)	\
-	(SKB_DATA_ALIGN((X)) + SKB_DATA_ALIGN(sizeof(struct skb_shared_info)))
+#define SKB_SHINFO_SIZE							\
+	(SKB_DATA_ALIGN(sizeof(struct skb_shared_info)			\
+			- offsetof(struct skb_shared_info, nr_frags))	\
+	 + offsetof(struct skb_shared_info, nr_frags))
+
+/* maximum data size which can fit into an allocation of X bytes */
+#define SKB_WITH_OVERHEAD(X)	((X) - SKB_SHINFO_SIZE)
+
+/* minimum allocation size required for an skb containing X bytes of data */
+#define SKB_ALLOCSIZE(X)	(SKB_DATA_ALIGN((X) + SKB_SHINFO_SIZE))
 
 #define SKB_MAX_ORDER(X, ORDER) \
 	SKB_WITH_OVERHEAD((PAGE_SIZE << (ORDER)) - (X))
@@ -63,7 +68,7 @@
 /* return minimum truesize of one skb containing X bytes of data */
 #define SKB_TRUESIZE(X) ((X) +						\
 			 SKB_DATA_ALIGN(sizeof(struct sk_buff)) +	\
-			 SKB_DATA_ALIGN(sizeof(struct skb_shared_info)))
+			 SKB_SHINFO_SIZE)
 
 /* A. Checksumming of received packets by device.
  *
@@ -263,6 +268,19 @@ struct ubuf_info {
  * the end of the header data, ie. at skb->end.
  */
 struct skb_shared_info {
+	/* Intermediate layers must ensure that destructor_arg
+	 * remains valid until skb destructor */
+	void		*destructor_arg;
+
+	/* Warning: all fields from here until dataref are cleared in
+	 * skb_shinfo_init() (called from __alloc_skb, build_skb,
+	 * skb_recycle, etc).
+	 *
+	 * nr_frags will always be aligned to the start of a cache
+	 * line. It is intended that everything from nr_frags until at
+	 * least frags[0] (inclusive) should fit into the same 64-byte
+	 * cache line.
+	 */
 	unsigned char	nr_frags;
 	__u8		tx_flags;
 	unsigned short	gso_size;
@@ -273,14 +291,8 @@ struct skb_shared_info {
 	struct skb_shared_hwtstamps hwtstamps;
 	__be32          ip6_frag_id;
 
-	/*
-	 * Warning : all fields before dataref are cleared in __alloc_skb()
-	 */
+	/* fields from nr_frags until dataref are cleared in skb_shinfo_init */
 	atomic_t	dataref;
-
-	/* Intermediate layers must ensure that destructor_arg
-	 * remains valid until skb destructor */
-	void *		destructor_arg;
 
 	/* must be last field, see pskb_expand_head() */
 	skb_frag_t	frags[MAX_SKB_FRAGS];
