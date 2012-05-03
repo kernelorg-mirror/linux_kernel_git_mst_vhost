@@ -41,8 +41,20 @@
 
 #define SKB_DATA_ALIGN(X)	(((X) + (SMP_CACHE_BYTES - 1)) & \
 				 ~(SMP_CACHE_BYTES - 1))
+/* maximum data size which can fit into an allocation of X bytes */
 #define SKB_WITH_OVERHEAD(X)	\
 	((X) - SKB_DATA_ALIGN(sizeof(struct skb_shared_info)))
+/*
+ * minimum allocation size required for an skb containing X bytes of data
+ *
+ * We do our best to align skb_shared_info on a separate cache
+ * line. It usually works because kmalloc(X > SMP_CACHE_BYTES) gives
+ * aligned memory blocks, unless SLUB/SLAB debug is enabled.  Both
+ * skb->head and skb_shared_info are cache line aligned.
+ */
+#define SKB_ALLOCSIZE(X)	\
+	(SKB_DATA_ALIGN((X)) + SKB_DATA_ALIGN(sizeof(struct skb_shared_info)))
+
 #define SKB_MAX_ORDER(X, ORDER) \
 	SKB_WITH_OVERHEAD((PAGE_SIZE << (ORDER)) - (X))
 #define SKB_MAX_HEAD(X)		(SKB_MAX_ORDER((X), 0))

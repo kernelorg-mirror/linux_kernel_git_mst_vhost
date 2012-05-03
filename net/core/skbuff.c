@@ -182,13 +182,7 @@ struct sk_buff *__alloc_skb(unsigned int size, gfp_t gfp_mask,
 		goto out;
 	prefetchw(skb);
 
-	/* We do our best to align skb_shared_info on a separate cache
-	 * line. It usually works because kmalloc(X > SMP_CACHE_BYTES) gives
-	 * aligned memory blocks, unless SLUB/SLAB debug is enabled.
-	 * Both skb->head and skb_shared_info are cache line aligned.
-	 */
-	size = SKB_DATA_ALIGN(size);
-	size += SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
+	size = SKB_ALLOCSIZE(size);
 	data = kmalloc_node_track_caller(size, gfp_mask, node);
 	if (!data)
 		goto nodata;

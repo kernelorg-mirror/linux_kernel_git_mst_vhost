@@ -5719,8 +5719,7 @@ static int tg3_alloc_rx_data(struct tg3 *tp, struct tg3_rx_prodring_set *tpr,
 	 * Callers depend upon this behavior and assume that
 	 * we leave everything unchanged if we fail.
 	 */
-	skb_size = SKB_DATA_ALIGN(data_size + TG3_RX_OFFSET(tp)) +
-		   SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
+	skb_size = SKB_ALLOCSIZE(data_size + TG3_RX_OFFSET(tp));
 	if (skb_size <= TG3_FRAGSIZE) {
 		data = tg3_frag_alloc(tpr);
 		*frag_size = TG3_FRAGSIZE;
