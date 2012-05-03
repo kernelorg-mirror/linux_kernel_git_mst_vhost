@@ -61,6 +61,7 @@ static void	call_reserve(struct rpc_task *task);
 static void	call_reserveresult(struct rpc_task *task);
 static void	call_allocate(struct rpc_task *task);
 static void	call_decode(struct rpc_task *task);
+static void	call_complete(struct rpc_task *task);
 static void	call_bind(struct rpc_task *task);
 static void	call_bind_status(struct rpc_task *task);
 static void	call_transmit(struct rpc_task *task);
@@ -1444,6 +1445,8 @@ rpc_xdr_encode(struct rpc_task *task)
 			 (char *)req->rq_buffer + req->rq_callsize,
 			 req->rq_rcvsize);
 
+	req->rq_snd_buf.destructor = &req->destructor;
+
 	p = rpc_encode_header(task);
 	if (p == NULL) {
 		printk(KERN_INFO "RPC: couldn't encode RPC header, exit EIO\n");
@@ -1609,6 +1612,7 @@ call_connect_status(struct rpc_task *task)
 static void
 call_transmit(struct rpc_task *task)
 {
+	struct rpc_rqst *req = task->tk_rqstp;
 	dprint_status(task);
 
 	task->tk_action = call_status;
@@ -1642,8 +1646,8 @@ call_transmit(struct rpc_task *task)
 	call_transmit_status(task);
 	if (rpc_reply_expected(task))
 		return;
-	task->tk_action = rpc_exit_task;
-	rpc_wake_up_queued_task(&task->tk_xprt->pending, task);
+	task->tk_action = call_complete;
+	skb_frag_destructor_unref(&req->destructor);
 }
 
 /*
@@ -1716,7 +1720,8 @@ call_bc_transmit(struct rpc_task *task)
 		return;
 	}
 
-	task->tk_action = rpc_exit_task;
+	task->tk_action = call_complete;
+	skb_frag_destructor_unref(&req->destructor);
 	if (task->tk_status < 0) {
 		printk(KERN_NOTICE "RPC: Could not send backchannel reply "
 			"error: %d\n", task->tk_status);
@@ -1756,7 +1761,6 @@ call_bc_transmit(struct rpc_task *task)
 			"error: %d\n", task->tk_status);
 		break;
 	}
-	rpc_wake_up_queued_task(&req->rq_xprt->pending, task);
 }
 #endif /* CONFIG_SUNRPC_BACKCHANNEL */
 
@@ -1934,12 +1938,14 @@ call_decode(struct rpc_task *task)
 		return;
 	}
 
-	task->tk_action = rpc_exit_task;
+	task->tk_action = call_complete;
 
 	if (decode) {
 		task->tk_status = rpcauth_unwrap_resp(task, decode, req, p,
 						      task->tk_msg.rpc_resp);
 	}
+	rpc_sleep_on(&req->rq_xprt->pending, task, NULL);
+	skb_frag_destructor_unref(&req->destructor);
 	dprintk("RPC: %5u call_decode result %d\n", task->tk_pid,
 			task->tk_status);
 	return;
@@ -1952,6 +1958,17 @@ out_retry:
 			xprt_conditional_disconnect(task->tk_xprt,
 					req->rq_connect_cookie);
 	}
+}
+
+/*
+ * 8.	Wait for pages to be released by the network stack.
+ */
+static void
+call_complete(struct rpc_task *task)
+{
+	dprintk("RPC: %5u call_complete result %d\n",
+		task->tk_pid, task->tk_status);
+	task->tk_action = rpc_exit_task;
 }
 
 static __be32 *

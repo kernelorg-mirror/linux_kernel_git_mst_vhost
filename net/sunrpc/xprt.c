@@ -1108,6 +1108,16 @@ static inline void xprt_init_xid(struct rpc_xprt *xprt)
 	xprt->xid = net_random();
 }
 
+static int xprt_complete_skb_pages(struct skb_frag_destructor *destroy)
+{
+	struct rpc_rqst	*req =
+		container_of(destroy, struct rpc_rqst, destructor);
+
+	dprintk("RPC: %5u completing skb pages\n", req->rq_task->tk_pid);
+	rpc_wake_up_queued_task(&req->rq_xprt->pending, req->rq_task);
+	return 0;
+}
+
 static void xprt_request_init(struct rpc_task *task, struct rpc_xprt *xprt)
 {
 	struct rpc_rqst	*req = task->tk_rqstp;
@@ -1120,6 +1130,8 @@ static void xprt_request_init(struct rpc_task *task, struct rpc_xprt *xprt)
 	req->rq_xid     = xprt_alloc_xid(xprt);
 	req->rq_release_snd_buf = NULL;
 	xprt_reset_majortimeo(req);
+	atomic_set(&req->destructor.ref, 1);
+	req->destructor.destroy = &xprt_complete_skb_pages;
 	dprintk("RPC: %5u reserved req %p xid %08x\n", task->tk_pid,
 			req, ntohl(req->rq_xid));
 }

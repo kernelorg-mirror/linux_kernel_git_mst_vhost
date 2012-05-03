@@ -16,6 +16,7 @@
 #include <asm/byteorder.h>
 #include <asm/unaligned.h>
 #include <linux/scatterlist.h>
+#include <linux/skbuff.h>
 
 /*
  * Buffer adjustment
@@ -57,6 +58,7 @@ struct xdr_buf {
 			tail[1];	/* Appended after page data */
 
 	struct page **	pages;		/* Array of contiguous pages */
+	struct skb_frag_destructor *destructor;
 	unsigned int	page_base,	/* Start of page data */
 			page_len,	/* Length of page data */
 			flags;		/* Flags for data disposition */

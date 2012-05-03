@@ -92,7 +92,10 @@ struct rpc_rqst {
 						/* A cookie used to track the
 						   state of the transport
 						   connection */
-	
+	struct skb_frag_destructor destructor;	/* SKB paged fragment
+						 * destructor for
+						 * transmitted pages*/
+
 	/*
 	 * Partial send handling
 	 */
