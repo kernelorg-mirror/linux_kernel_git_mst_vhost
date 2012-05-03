@@ -263,7 +263,7 @@ struct sk_buff *build_skb(void *data, unsigned int frag_size)
 	if (!skb)
 		return NULL;
 
-	size -= SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
+	size = SKB_WITH_OVERHEAD(size);
 
 	memset(skb, 0, offsetof(struct sk_buff, tail));
 	skb->truesize = SKB_TRUESIZE(size);
