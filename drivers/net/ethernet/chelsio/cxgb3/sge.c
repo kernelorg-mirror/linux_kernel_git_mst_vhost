@@ -3043,7 +3043,7 @@ int t3_sge_alloc_qset(struct adapter *adapter, unsigned int id, int nports,
 	q->fl[1].buf_size = FL1_PG_CHUNK_SIZE;
 #else
 	q->fl[1].buf_size = is_offload(adapter) ?
-		(16 * 1024) - SKB_DATA_ALIGN(sizeof(struct skb_shared_info)) :
+		SKB_WITH_OVERHEAD(16 * 1024) :
 		MAX_FRAME_SIZE + 2 + sizeof(struct cpl_rx_pkt);
 #endif
 
@@ -3282,8 +3282,8 @@ void t3_sge_prep(struct adapter *adap, struct sge_params *p)
 {
 	int i;
 
-	p->max_pkt_size = (16 * 1024) - sizeof(struct cpl_rx_data) -
-	    SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
+	p->max_pkt_size =
+		SKB_WITH_OVERHEAD((16*1024) - sizeof(struct cpl_rx_data));
 
 	for (i = 0; i < SGE_QSETS; ++i) {
 		struct qset_params *q = p->qset + i;
