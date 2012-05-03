@@ -119,6 +119,7 @@ int rds_tcp_xmit(struct rds_connection *conn, struct rds_message *rm,
 	while (sg < rm->data.op_nents) {
 		ret = tc->t_sock->ops->sendpage(tc->t_sock,
 						sg_page(&rm->data.op_sg[sg]),
+						NULL,
 						rm->data.op_sg[sg].offset + off,
 						rm->data.op_sg[sg].length - off,
 						MSG_DONTWAIT|MSG_NOSIGNAL);

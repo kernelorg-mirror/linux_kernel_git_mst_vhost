@@ -284,8 +284,8 @@ static int iscsi_sw_tcp_xmit_segment(struct iscsi_tcp_conn *tcp_conn,
 		if (!segment->data) {
 			sg = segment->sg;
 			offset += segment->sg_offset + sg->offset;
-			r = tcp_sw_conn->sendpage(sk, sg_page(sg), offset,
-						  copy, flags);
+			r = tcp_sw_conn->sendpage(sk, sg_page(sg), NULL,
+						  offset, copy, flags);
 		} else {
 			struct msghdr msg = { .msg_flags = flags };
 			struct kvec iov = {

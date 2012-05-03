@@ -823,8 +823,11 @@ static int tcp_send_mss(struct sock *sk, int *size_goal, int flags)
 	return mss_now;
 }
 
-static ssize_t do_tcp_sendpages(struct sock *sk, struct page **pages, int poffset,
-			 size_t psize, int flags)
+static ssize_t do_tcp_sendpages(struct sock *sk,
+				struct page **pages,
+				struct skb_frag_destructor *destroy,
+				int poffset,
+				size_t psize, int flags)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	int mss_now, size_goal;
@@ -871,7 +874,7 @@ new_segment:
 			copy = size;
 
 		i = skb_shinfo(skb)->nr_frags;
-		can_coalesce = skb_can_coalesce(skb, i, page, NULL, offset);
+		can_coalesce = skb_can_coalesce(skb, i, page, destroy, offset);
 		if (!can_coalesce && i >= MAX_SKB_FRAGS) {
 			tcp_mark_push(tp, skb);
 			goto new_segment;
@@ -882,8 +885,9 @@ new_segment:
 		if (can_coalesce) {
 			skb_frag_size_add(&skb_shinfo(skb)->frags[i - 1], copy);
 		} else {
-			get_page(page);
 			skb_fill_page_desc(skb, i, page, offset, copy);
+			skb_frag_set_destructor(skb, i, destroy);
+			skb_frag_ref(skb, i);
 		}
 
 		skb->len += copy;
@@ -938,18 +942,20 @@ out_err:
 	return sk_stream_error(sk, flags, err);
 }
 
-int tcp_sendpage(struct sock *sk, struct page *page, int offset,
-		 size_t size, int flags)
+int tcp_sendpage(struct sock *sk, struct page *page,
+		 struct skb_frag_destructor *destroy,
+		 int offset, size_t size, int flags)
 {
 	ssize_t res;
 
 	if (!(sk->sk_route_caps & NETIF_F_SG) ||
 	    !(sk->sk_route_caps & NETIF_F_ALL_CSUM))
-		return sock_no_sendpage(sk->sk_socket, page, offset, size,
-					flags);
+		return sock_no_sendpage(sk->sk_socket, page, destroy,
+					offset, size, flags);
 
 	lock_sock(sk);
-	res = do_tcp_sendpages(sk, &page, offset, size, flags);
+	res = do_tcp_sendpages(sk, &page, destroy,
+			       offset, size, flags);
 	release_sock(sk);
 	return res;
 }

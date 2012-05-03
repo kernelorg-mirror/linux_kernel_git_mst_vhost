@@ -747,7 +747,9 @@ int inet_sendmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 }
 EXPORT_SYMBOL(inet_sendmsg);
 
-ssize_t inet_sendpage(struct socket *sock, struct page *page, int offset,
+ssize_t inet_sendpage(struct socket *sock, struct page *page,
+		      struct skb_frag_destructor *destroy,
+		      int offset,
 		      size_t size, int flags)
 {
 	struct sock *sk = sock->sk;
@@ -760,8 +762,9 @@ ssize_t inet_sendpage(struct socket *sock, struct page *page, int offset,
 		return -EAGAIN;
 
 	if (sk->sk_prot->sendpage)
-		return sk->sk_prot->sendpage(sk, page, offset, size, flags);
-	return sock_no_sendpage(sock, page, offset, size, flags);
+		return sk->sk_prot->sendpage(sk, page, destroy,
+					     offset, size, flags);
+	return sock_no_sendpage(sock, page, destroy, offset, size, flags);
 }
 EXPORT_SYMBOL(inet_sendpage);
 

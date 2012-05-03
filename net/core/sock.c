@@ -1956,7 +1956,9 @@ int sock_no_mmap(struct file *file, struct socket *sock, struct vm_area_struct *
 }
 EXPORT_SYMBOL(sock_no_mmap);
 
-ssize_t sock_no_sendpage(struct socket *sock, struct page *page, int offset, size_t size, int flags)
+ssize_t sock_no_sendpage(struct socket *sock, struct page *page,
+			 struct skb_frag_destructor *destroy,
+			 int offset, size_t size, int flags)
 {
 	ssize_t res;
 	struct msghdr msg = {.msg_flags = flags};
@@ -1966,6 +1968,8 @@ ssize_t sock_no_sendpage(struct socket *sock, struct page *page, int offset, siz
 	iov.iov_len = size;
 	res = kernel_sendmsg(sock, &msg, &iov, 1, size);
 	kunmap(page);
+	/* kernel_sendmsg copies so we can destroy immediately */
+	skb_frag_destructor_unref(destroy);
 	return res;
 }
 EXPORT_SYMBOL(sock_no_sendpage);

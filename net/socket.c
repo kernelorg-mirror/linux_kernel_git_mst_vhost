@@ -815,7 +815,7 @@ static ssize_t sock_sendpage(struct file *file, struct page *page,
 	/* more is a combination of MSG_MORE and MSG_SENDPAGE_NOTLAST */
 	flags |= more;
 
-	return kernel_sendpage(sock, page, offset, size, flags);
+	return kernel_sendpage(sock, page, NULL, offset, size, flags);
 }
 
 static ssize_t sock_splice_read(struct file *file, loff_t *ppos,
@@ -3349,15 +3349,18 @@ int kernel_setsockopt(struct socket *sock, int level, int optname,
 }
 EXPORT_SYMBOL(kernel_setsockopt);
 
-int kernel_sendpage(struct socket *sock, struct page *page, int offset,
+int kernel_sendpage(struct socket *sock, struct page *page,
+		    struct skb_frag_destructor *destroy,
+		    int offset,
 		    size_t size, int flags)
 {
 	sock_update_classid(sock->sk);
 
 	if (sock->ops->sendpage)
-		return sock->ops->sendpage(sock, page, offset, size, flags);
+		return sock->ops->sendpage(sock, page, destroy,
+					   offset, size, flags);
 
-	return sock_no_sendpage(sock, page, offset, size, flags);
+	return sock_no_sendpage(sock, page, destroy, offset, size, flags);
 }
 EXPORT_SYMBOL(kernel_sendpage);
 

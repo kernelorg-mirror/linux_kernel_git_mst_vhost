@@ -320,7 +320,7 @@ static int ceph_tcp_sendpage(struct socket *sock, struct page *page,
 	int flags = MSG_DONTWAIT | MSG_NOSIGNAL | (more ? MSG_MORE : MSG_EOR);
 	int ret;
 
-	ret = kernel_sendpage(sock, page, offset, size, flags);
+	ret = kernel_sendpage(sock, page, NULL, offset, size, flags);
 	if (ret == -EAGAIN)
 		ret = 0;
 

@@ -848,6 +848,7 @@ struct proto {
 					size_t len, int noblock, int flags, 
 					int *addr_len);
 	int			(*sendpage)(struct sock *sk, struct page *page,
+					struct skb_frag_destructor *destroy,
 					int offset, size_t size, int flags);
 	int			(*bind)(struct sock *sk, 
 					struct sockaddr *uaddr, int addr_len);
@@ -1466,9 +1467,10 @@ extern int			sock_no_mmap(struct file *file,
 					     struct socket *sock,
 					     struct vm_area_struct *vma);
 extern ssize_t			sock_no_sendpage(struct socket *sock,
-						struct page *page,
-						int offset, size_t size, 
-						int flags);
+					struct page *page,
+					struct skb_frag_destructor *destroy,
+					int offset, size_t size,
+					int flags);
 
 /*
  * Functions to fill in entries in struct proto_ops when a protocol

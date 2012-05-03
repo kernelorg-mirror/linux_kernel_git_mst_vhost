@@ -408,7 +408,7 @@ static int xs_send_pagedata(struct socket *sock, struct xdr_buf *xdr, unsigned i
 		remainder -= len;
 		if (remainder != 0 || more)
 			flags |= MSG_MORE;
-		err = sock->ops->sendpage(sock, *ppage, base, len, flags);
+		err = sock->ops->sendpage(sock, *ppage, NULL, base, len, flags);
 		if (remainder == 0 || err != len)
 			break;
 		sent += err;

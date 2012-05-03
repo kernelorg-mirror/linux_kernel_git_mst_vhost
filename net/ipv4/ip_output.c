@@ -1129,6 +1129,7 @@ int ip_append_data(struct sock *sk, struct flowi4 *fl4,
 }
 
 ssize_t	ip_append_page(struct sock *sk, struct flowi4 *fl4, struct page *page,
+		       struct skb_frag_destructor *destroy,
 		       int offset, size_t size, int flags)
 {
 	struct inet_sock *inet = inet_sk(sk);
@@ -1242,11 +1243,12 @@ ssize_t	ip_append_page(struct sock *sk, struct flowi4 *fl4, struct page *page,
 		i = skb_shinfo(skb)->nr_frags;
 		if (len > size)
 			len = size;
-		if (skb_can_coalesce(skb, i, page, NULL, offset)) {
+		if (skb_can_coalesce(skb, i, page, destroy, offset)) {
 			skb_frag_size_add(&skb_shinfo(skb)->frags[i-1], len);
 		} else if (i < MAX_SKB_FRAGS) {
-			get_page(page);
 			skb_fill_page_desc(skb, i, page, offset, len);
+			skb_frag_set_destructor(skb, i, destroy);
+			skb_frag_ref(skb, i);
 		} else {
 			err = -EMSGSIZE;
 			goto error;

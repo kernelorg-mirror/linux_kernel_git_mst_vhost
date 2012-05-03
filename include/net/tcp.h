@@ -332,7 +332,9 @@ extern void *tcp_v4_tw_get_peer(struct sock *sk);
 extern int tcp_v4_tw_remember_stamp(struct inet_timewait_sock *tw);
 extern int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
 		       size_t size);
-extern int tcp_sendpage(struct sock *sk, struct page *page, int offset,
+extern int tcp_sendpage(struct sock *sk, struct page *page,
+			struct skb_frag_destructor *destroy,
+			int offset,
 			size_t size, int flags);
 extern int tcp_ioctl(struct sock *sk, int cmd, unsigned long arg);
 extern int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,

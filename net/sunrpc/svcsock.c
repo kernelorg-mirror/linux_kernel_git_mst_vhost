@@ -185,7 +185,7 @@ int svc_send_common(struct socket *sock, struct xdr_buf *xdr,
 	/* send head */
 	if (slen == xdr->head[0].iov_len)
 		flags = 0;
-	len = kernel_sendpage(sock, headpage, headoffset,
+	len = kernel_sendpage(sock, headpage, NULL, headoffset,
 				  xdr->head[0].iov_len, flags);
 	if (len != xdr->head[0].iov_len)
 		goto out;
@@ -198,7 +198,7 @@ int svc_send_common(struct socket *sock, struct xdr_buf *xdr,
 	while (pglen > 0) {
 		if (slen == size)
 			flags = 0;
-		result = kernel_sendpage(sock, *ppage, base, size, flags);
+		result = kernel_sendpage(sock, *ppage, NULL, base, size, flags);
 		if (result > 0)
 			len += result;
 		if (result != size)
@@ -212,7 +212,7 @@ int svc_send_common(struct socket *sock, struct xdr_buf *xdr,
 
 	/* send tail */
 	if (xdr->tail[0].iov_len) {
-		result = kernel_sendpage(sock, tailpage, tailoffset,
+		result = kernel_sendpage(sock, tailpage, NULL, tailoffset,
 				   xdr->tail[0].iov_len, 0);
 		if (result > 0)
 			len += result;

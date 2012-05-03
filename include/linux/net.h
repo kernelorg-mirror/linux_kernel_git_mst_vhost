@@ -157,6 +157,7 @@ struct kiocb;
 struct sockaddr;
 struct msghdr;
 struct module;
+struct skb_frag_destructor;
 
 struct proto_ops {
 	int		family;
@@ -203,6 +204,7 @@ struct proto_ops {
 	int		(*mmap)	     (struct file *file, struct socket *sock,
 				      struct vm_area_struct * vma);
 	ssize_t		(*sendpage)  (struct socket *sock, struct page *page,
+				      struct skb_frag_destructor *destroy,
 				      int offset, size_t size, int flags);
 	ssize_t 	(*splice_read)(struct socket *sock,  loff_t *ppos,
 				       struct pipe_inode_info *pipe, size_t len, unsigned int flags);
@@ -274,7 +276,9 @@ extern int kernel_getsockopt(struct socket *sock, int level, int optname,
 			     char *optval, int *optlen);
 extern int kernel_setsockopt(struct socket *sock, int level, int optname,
 			     char *optval, unsigned int optlen);
-extern int kernel_sendpage(struct socket *sock, struct page *page, int offset,
+extern int kernel_sendpage(struct socket *sock, struct page *page,
+			   struct skb_frag_destructor *destroy,
+			   int offset,
 			   size_t size, int flags);
 extern int kernel_sock_ioctl(struct socket *sock, int cmd, unsigned long arg);
 extern int kernel_sock_shutdown(struct socket *sock,

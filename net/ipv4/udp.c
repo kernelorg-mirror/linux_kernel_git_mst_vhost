@@ -1032,8 +1032,9 @@ do_confirm:
 }
 EXPORT_SYMBOL(udp_sendmsg);
 
-int udp_sendpage(struct sock *sk, struct page *page, int offset,
-		 size_t size, int flags)
+int udp_sendpage(struct sock *sk, struct page *page,
+		 struct skb_frag_destructor *destroy,
+		 int offset, size_t size, int flags)
 {
 	struct inet_sock *inet = inet_sk(sk);
 	struct udp_sock *up = udp_sk(sk);
@@ -1061,11 +1062,11 @@ int udp_sendpage(struct sock *sk, struct page *page, int offset,
 	}
 
 	ret = ip_append_page(sk, &inet->cork.fl.u.ip4,
-			     page, offset, size, flags);
+			     page, destroy, offset, size, flags);
 	if (ret == -EOPNOTSUPP) {
 		release_sock(sk);
-		return sock_no_sendpage(sk->sk_socket, page, offset,
-					size, flags);
+		return sock_no_sendpage(sk->sk_socket, page, destroy,
+					offset, size, flags);
 	}
 	if (ret < 0) {
 		udp_flush_pending_frames(sk);
