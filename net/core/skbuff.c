@@ -902,6 +902,7 @@ struct sk_buff *__pskb_copy(struct sk_buff *skb, int headroom, gfp_t gfp_mask)
 	n->truesize += skb->data_len;
 	n->data_len  = skb->data_len;
 	n->len	     = skb->len;
+	skb_copy_frag_destructor(n, skb);
 
 	if (skb_shinfo(skb)->nr_frags) {
 		int i;
@@ -2284,6 +2285,7 @@ static inline void skb_split_no_header(struct sk_buff *skb,
 void skb_split(struct sk_buff *skb, struct sk_buff *skb1, const u32 len)
 {
 	int pos = skb_headlen(skb);
+	skb_copy_frag_destructor(skb1, skb);
 
 	if (len < pos)	/* Split line is inside header. */
 		skb_split_inside_header(skb, skb1, len, pos);
@@ -2762,6 +2764,7 @@ struct sk_buff *skb_segment(struct sk_buff *skb, netdev_features_t features)
 			if (unlikely(!nskb))
 				goto err;
 
+			skb_copy_frag_destructor(nskb, skb);
 			skb_reserve(nskb, headroom);
 			__skb_put(nskb, doffset);
 		}

@@ -1270,6 +1270,8 @@ static inline void skb_frag_set_destructor(struct sk_buff *skb, int i,
 {
 	skb_frag_t *frag = &skb_shinfo(skb)->frags[i];
 	frag->page.destructor = destroy;
+	if (destroy)
+		skb_shinfo(skb)->tx_flags |= SKBTX_DEV_ZEROCOPY;
 }
 
 /**
@@ -1734,6 +1736,22 @@ static inline int skb_orphan_frags(struct sk_buff *skb, gfp_t gfp_mask)
 	if (likely(!(skb_shinfo(skb)->tx_flags & SKBTX_DEV_ZEROCOPY)))
 		return 0;
 	return skb_copy_ubufs(skb, gfp_mask);
+}
+
+/**
+ *	skb_copy_frag_destructor - update skb after destructor copy
+ *	@to: target skb to which frags were copied
+ *	@from: source skb from which frags where copied
+ *
+ *	Called after some frags move between skbs.
+ *	If any frags in @from have a destructor, a flag in tx_flags is set.
+ *	Set flag for @to so that it gets checked for destructors.
+ */
+static inline void skb_copy_frag_destructor(struct sk_buff *to,
+					    struct sk_buff *from)
+{
+	skb_shinfo(to)->tx_flags |= skb_shinfo(from)->tx_flags &
+		SKBTX_DEV_ZEROCOPY;
 }
 
 /**
