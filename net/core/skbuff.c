@@ -423,7 +423,7 @@ static void skb_release_data(struct sk_buff *skb)
 			struct ubuf_info *uarg;
 
 			uarg = skb_shinfo(skb)->destructor_arg;
-			if (uarg->callback)
+			if (uarg && uarg->callback)
 				uarg->callback(uarg);
 		}
 
@@ -721,6 +721,8 @@ int skb_copy_ubufs(struct sk_buff *skb, gfp_t gfp_mask)
 	for (i = 0; i < num_frags; i++) {
 		u8 *vaddr;
 		skb_frag_t *f = &skb_shinfo(skb)->frags[i];
+		if (unlikely((!uarg && !f->page.destructor)))
+			continue;
 
 		page = alloc_page(GFP_ATOMIC);
 		if (!page) {
@@ -740,13 +742,21 @@ int skb_copy_ubufs(struct sk_buff *skb, gfp_t gfp_mask)
 	}
 
 	/* skb frags release userspace buffers */
-	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++)
-		skb_frag_unref(skb, i);
+	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
+		skb_frag_t *f = &skb_shinfo(skb)->frags[i];
+		if (unlikely((!uarg && !f->page.destructor)))
+			continue;
+		__skb_frag_unref(f);
+	}
 
-	uarg->callback(uarg);
+	if (uarg)
+		uarg->callback(uarg);
 
 	/* skb frags point to kernel buffers */
 	for (i = skb_shinfo(skb)->nr_frags; i > 0; i--) {
+		skb_frag_t *f = &skb_shinfo(skb)->frags[i];
+		if (unlikely((!uarg && !f->page.destructor)))
+			continue;
 		__skb_fill_page_desc(skb, i-1, head, 0,
 				     skb_shinfo(skb)->frags[i - 1].size);
 		head = (struct page *)head->private;
