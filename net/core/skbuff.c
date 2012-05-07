@@ -697,24 +697,30 @@ struct sk_buff *skb_morph(struct sk_buff *dst, struct sk_buff *src)
 }
 EXPORT_SYMBOL_GPL(skb_morph);
 
-/*
- * If uarg != NULL copy and replace all frags.
- * If uarg == NULL then only copy and replace those which have a destructor
- * pointer.
+/*	skb_copy_ubufs	-	copy userspace skb frags buffers to kernel
+ *	@skb: the skb to modify
+ *	@gfp_mask: allocation priority
+ *
+ *	This must be called on SKBTX_DEV_ZEROCOPY skb.
+ *	It will copy all frags into kernel and drop the reference
+ *	to userspace pages.
+ *
+ *	If this function is called from an interrupt gfp_mask() must be
+ *	%GFP_ATOMIC.
+ *
+ *	Returns 0 on success or a negative error code on failure
+ *	to allocate kernel memory to copy to.
  */
-static int skb_copy_frags(struct sk_buff *skb, gfp_t gfp_mask,
-			  struct ubuf_info *uarg)
+int skb_copy_ubufs(struct sk_buff *skb, gfp_t gfp_mask)
 {
 	int i;
 	int num_frags = skb_shinfo(skb)->nr_frags;
 	struct page *page, *head = NULL;
+	struct ubuf_info *uarg = skb_shinfo(skb)->destructor_arg;
 
 	for (i = 0; i < num_frags; i++) {
 		u8 *vaddr;
 		skb_frag_t *f = &skb_shinfo(skb)->frags[i];
-
-		if (!uarg && !f->page.destructor)
-			continue;
 
 		page = alloc_page(GFP_ATOMIC);
 		if (!page) {
@@ -733,16 +739,11 @@ static int skb_copy_frags(struct sk_buff *skb, gfp_t gfp_mask,
 		head = page;
 	}
 
-	/* skb frags release buffers */
-	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++) {
-		skb_frag_t *f = &skb_shinfo(skb)->frags[i];
-		if (!uarg && !f->page.destructor)
-			continue;
+	/* skb frags release userspace buffers */
+	for (i = 0; i < skb_shinfo(skb)->nr_frags; i++)
 		skb_frag_unref(skb, i);
-	}
 
-	if (uarg)
-		uarg->callback(uarg);
+	uarg->callback(uarg);
 
 	/* skb frags point to kernel buffers */
 	for (i = skb_shinfo(skb)->nr_frags; i > 0; i--) {
@@ -751,41 +752,10 @@ static int skb_copy_frags(struct sk_buff *skb, gfp_t gfp_mask,
 		head = (struct page *)head->private;
 	}
 
+	skb_shinfo(skb)->tx_flags &= ~SKBTX_DEV_ZEROCOPY;
 	return 0;
 }
 
-/*	skb_copy_ubufs	-	copy userspace skb frags buffers to kernel
- *	@skb: the skb to modify
- *	@gfp_mask: allocation priority
- *
- *	This must be called on SKBTX_DEV_ZEROCOPY skb.
- *	It will copy all frags into kernel and drop the reference
- *	to userspace pages.
- *
- *	If this function is called from an interrupt gfp_mask() must be
- *	%GFP_ATOMIC.
- *
- *	Returns 0 on success or a negative error code on failure
- *	to allocate kernel memory to copy to.
- */
-int skb_copy_ubufs(struct sk_buff *skb, gfp_t gfp_mask)
-{
-	struct ubuf_info *uarg = skb_shinfo(skb)->destructor_arg;
-	int rc;
-
-	rc = skb_copy_frags(skb, gfp_mask, uarg);
-
-	if (rc == 0)
-		skb_shinfo(skb)->tx_flags &= ~SKBTX_DEV_ZEROCOPY;
-
-	return rc;
-}
-
-int skb_orphan_frags(struct sk_buff *skb, gfp_t gfp_mask)
-{
-	return skb_copy_frags(skb, gfp_mask, NULL);
-}
-EXPORT_SYMBOL(skb_orphan_frags);
 
 /**
  *	skb_clone	-	duplicate an sk_buff

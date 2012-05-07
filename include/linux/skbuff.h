@@ -1721,17 +1721,6 @@ static inline void skb_orphan(struct sk_buff *skb)
 }
 
 /**
- *	skb_orphan_frags - orphan the frags contained in a buffer
- *	@skb: buffer to orphan frags from
- *	@gfp_mask: allocation mask for replacement pages
- *
- *	For each frag in the SKB which has a destructor (i.e. has an
- *	owner) create a copy of that frag and release the original
- *	page by calling the destructor.
- */
-extern int skb_orphan_frags(struct sk_buff *skb, gfp_t gfp_mask);
-
-/**
  *	__skb_queue_purge - empty a list
  *	@list: list to empty
  *
