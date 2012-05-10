@@ -753,12 +753,11 @@ int skb_copy_ubufs(struct sk_buff *skb, gfp_t gfp_mask)
 		uarg->callback(uarg);
 
 	/* skb frags point to kernel buffers */
-	for (i = skb_shinfo(skb)->nr_frags; i > 0; i--) {
+	for (i = skb_shinfo(skb)->nr_frags - 1; i >= 0; i--) {
 		skb_frag_t *f = &skb_shinfo(skb)->frags[i];
 		if (unlikely((!uarg && !f->page.destructor)))
 			continue;
-		__skb_fill_page_desc(skb, i-1, head, 0,
-				     skb_shinfo(skb)->frags[i - 1].size);
+		__skb_fill_page_desc(skb, i, head, 0, f->size);
 		head = (struct page *)head->private;
 	}
 
