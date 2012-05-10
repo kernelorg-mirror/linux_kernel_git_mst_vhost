@@ -1270,8 +1270,10 @@ static inline void skb_frag_set_destructor(struct sk_buff *skb, int i,
 {
 	skb_frag_t *frag = &skb_shinfo(skb)->frags[i];
 	frag->page.destructor = destroy;
-	if (destroy)
+	if (destroy) {
 		skb_shinfo(skb)->tx_flags |= SKBTX_DEV_ZEROCOPY;
+		skb_shinfo(skb)->destructor_arg = NULL;
+	}
 }
 
 /**
