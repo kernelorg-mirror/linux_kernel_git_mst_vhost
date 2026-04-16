@@ -299,7 +299,7 @@ static void release_pages_balloon(struct virtio_balloon *vb,
 
 	list_for_each_entry_safe(page, next, pages, lru) {
 		list_del(&page->lru);
-		if (host_zeroes_pages)
+		if (host_zeroes_pages && !page_poisoning_enabled_static())
 			put_page_zeroed(page);
 		else
 			put_page(page); /* balloon reference */

@@ -1631,7 +1631,7 @@ static void __free_pages_ok(struct page *page, unsigned int order,
 	struct zone *zone = page_zone(page);
 
 	if (__free_pages_prepare(page, order, fpi_flags)) {
-		if ((fpi_flags & FPI_ZEROED) && !page_poisoning_enabled())
+		if (fpi_flags & FPI_ZEROED)
 			__SetPageZeroed(page);
 		free_one_page(zone, page, pfn, order, fpi_flags);
 	}
@@ -3038,7 +3038,7 @@ static void __free_frozen_pages(struct page *page, unsigned int order,
 	if (!__free_pages_prepare(page, order, fpi_flags))
 		return;
 
-	if ((fpi_flags & FPI_ZEROED) && !page_poisoning_enabled())
+	if (fpi_flags & FPI_ZEROED)
 		__SetPageZeroed(page);
 
 	/*
