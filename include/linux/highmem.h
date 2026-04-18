@@ -321,9 +321,11 @@ struct folio *vma_alloc_zeroed_movable_folio(struct vm_area_struct *vma,
 				   unsigned long vaddr)
 {
 	struct folio *folio;
+	pghint_t hints;
 
-	folio = vma_alloc_folio(GFP_HIGHUSER_MOVABLE, 0, vma, vaddr);
-	if (folio && user_alloc_needs_zeroing())
+	folio = vma_alloc_folio_hints(GFP_HIGHUSER_MOVABLE, 0, vma, vaddr,
+				      &hints);
+	if (folio && user_alloc_needs_zeroing() && !(hints & PGHINT_ZEROED))
 		clear_user_highpage(&folio->page, vaddr);
 
 	return folio;
