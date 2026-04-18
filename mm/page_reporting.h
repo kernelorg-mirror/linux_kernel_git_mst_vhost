@@ -12,8 +12,14 @@
 
 #ifdef CONFIG_PAGE_REPORTING
 DECLARE_STATIC_KEY_FALSE(page_reporting_enabled);
+DECLARE_STATIC_KEY_FALSE(page_reporting_host_zeroes);
 extern unsigned int page_reporting_order;
 void __page_reporting_notify(void);
+
+static inline bool page_reporting_host_zeroes_pages(void)
+{
+	return static_branch_unlikely(&page_reporting_host_zeroes);
+}
 
 static inline bool page_reported(struct page *page)
 {
@@ -45,6 +51,11 @@ static inline void page_reporting_notify_free(unsigned int order)
 }
 #else /* CONFIG_PAGE_REPORTING */
 #define page_reported(_page)	false
+
+static inline bool page_reporting_host_zeroes_pages(void)
+{
+	return false;
+}
 
 static inline void page_reporting_notify_free(unsigned int order)
 {
