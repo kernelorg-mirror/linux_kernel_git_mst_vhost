@@ -226,6 +226,9 @@ static inline void arch_free_page(struct page *page, int order) { }
 static inline void arch_alloc_page(struct page *page, int order) { }
 #endif
 
+typedef unsigned int __bitwise pghint_t;
+#define PGHINT_ZEROED	((__force pghint_t)BIT(0))
+
 struct page *__alloc_pages_noprof(gfp_t gfp, unsigned int order, int preferred_nid,
 		nodemask_t *nodemask);
 #define __alloc_pages(...)			alloc_hooks(__alloc_pages_noprof(__VA_ARGS__))
@@ -325,6 +328,9 @@ struct folio *folio_alloc_mpol_noprof(gfp_t gfp, unsigned int order,
 		struct mempolicy *mpol, pgoff_t ilx, int nid);
 struct folio *vma_alloc_folio_noprof(gfp_t gfp, int order, struct vm_area_struct *vma,
 		unsigned long addr);
+struct folio *vma_alloc_folio_hints_noprof(gfp_t gfp, int order,
+		struct vm_area_struct *vma, unsigned long addr,
+		pghint_t *hints);
 #else
 static inline struct page *alloc_pages_noprof(gfp_t gfp_mask, unsigned int order)
 {
@@ -344,12 +350,21 @@ static inline struct folio *vma_alloc_folio_noprof(gfp_t gfp, int order,
 {
 	return folio_alloc_noprof(gfp, order);
 }
+static inline struct folio *vma_alloc_folio_hints_noprof(gfp_t gfp, int order,
+		struct vm_area_struct *vma, unsigned long addr,
+		pghint_t *hints)
+{
+	if (hints)
+		*hints = 0;
+	return folio_alloc_noprof(gfp, order);
+}
 #endif
 
 #define alloc_pages(...)			alloc_hooks(alloc_pages_noprof(__VA_ARGS__))
 #define folio_alloc(...)			alloc_hooks(folio_alloc_noprof(__VA_ARGS__))
 #define folio_alloc_mpol(...)			alloc_hooks(folio_alloc_mpol_noprof(__VA_ARGS__))
 #define vma_alloc_folio(...)			alloc_hooks(vma_alloc_folio_noprof(__VA_ARGS__))
+#define vma_alloc_folio_hints(...)		alloc_hooks(vma_alloc_folio_hints_noprof(__VA_ARGS__))
 
 #define alloc_page(gfp_mask) alloc_pages(gfp_mask, 0)
 

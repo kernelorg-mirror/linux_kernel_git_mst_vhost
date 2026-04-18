@@ -2547,6 +2547,91 @@ struct folio *vma_alloc_folio_noprof(gfp_t gfp, int order, struct vm_area_struct
 }
 EXPORT_SYMBOL(vma_alloc_folio_noprof);
 
+static struct page *alloc_pages_preferred_many_hints(gfp_t gfp,
+		unsigned int order, int nid, nodemask_t *nodemask,
+		pghint_t *hints)
+{
+	struct page *page;
+	gfp_t preferred_gfp;
+
+	preferred_gfp = gfp | __GFP_NOWARN;
+	preferred_gfp &= ~(__GFP_DIRECT_RECLAIM | __GFP_NOFAIL);
+	page = __alloc_frozen_pages_hints_noprof(preferred_gfp, order, nid,
+						 nodemask, hints);
+	if (!page)
+		page = __alloc_frozen_pages_hints_noprof(gfp, order, nid, NULL,
+							 hints);
+
+	return page;
+}
+
+static struct page *alloc_pages_mpol_hints(gfp_t gfp, unsigned int order,
+		struct mempolicy *pol, pgoff_t ilx, int nid,
+		pghint_t *hints)
+{
+	nodemask_t *nodemask;
+	struct page *page;
+
+	nodemask = policy_nodemask(gfp, pol, ilx, &nid);
+
+	if (pol->mode == MPOL_PREFERRED_MANY)
+		return alloc_pages_preferred_many_hints(gfp, order, nid,
+						       nodemask, hints);
+
+	if (IS_ENABLED(CONFIG_TRANSPARENT_HUGEPAGE) &&
+	    order == HPAGE_PMD_ORDER && ilx != NO_INTERLEAVE_INDEX) {
+		if (pol->mode != MPOL_INTERLEAVE &&
+		    pol->mode != MPOL_WEIGHTED_INTERLEAVE &&
+		    (!nodemask || node_isset(nid, *nodemask))) {
+			page = __alloc_frozen_pages_hints_noprof(
+				gfp | __GFP_THISNODE | __GFP_NORETRY, order,
+				nid, NULL, hints);
+			if (page || !(gfp & __GFP_DIRECT_RECLAIM))
+				return page;
+		}
+	}
+
+	page = __alloc_frozen_pages_hints_noprof(gfp, order, nid, nodemask,
+						 hints);
+
+	if (unlikely(pol->mode == MPOL_INTERLEAVE ||
+		     pol->mode == MPOL_WEIGHTED_INTERLEAVE) && page) {
+		if (static_branch_likely(&vm_numa_stat_key) &&
+		    page_to_nid(page) == nid) {
+			preempt_disable();
+			__count_numa_event(page_zone(page), NUMA_INTERLEAVE_HIT);
+			preempt_enable();
+		}
+	}
+
+	return page;
+}
+
+struct folio *vma_alloc_folio_hints_noprof(gfp_t gfp, int order,
+		struct vm_area_struct *vma, unsigned long addr,
+		pghint_t *hints)
+{
+	struct mempolicy *pol;
+	pgoff_t ilx;
+	struct folio *folio;
+	struct page *page;
+
+	if (vma->vm_flags & VM_DROPPABLE)
+		gfp |= __GFP_NOWARN;
+
+	pol = get_vma_policy(vma, addr, order, &ilx);
+	page = alloc_pages_mpol_hints(gfp | __GFP_COMP, order, pol, ilx,
+				      numa_node_id(), hints);
+	mpol_cond_put(pol);
+	if (!page)
+		return NULL;
+
+	set_page_refcounted(page);
+	folio = page_rmappable_folio(page);
+	return folio;
+}
+EXPORT_SYMBOL(vma_alloc_folio_hints_noprof);
+
 struct page *alloc_frozen_pages_noprof(gfp_t gfp, unsigned order)
 {
 	struct mempolicy *pol = &default_policy;

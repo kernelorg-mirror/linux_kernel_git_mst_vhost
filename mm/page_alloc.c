@@ -5222,13 +5222,16 @@ EXPORT_SYMBOL_GPL(alloc_pages_bulk_noprof);
 /*
  * This is the 'heart' of the zoned buddy allocator.
  */
-struct page *__alloc_frozen_pages_noprof(gfp_t gfp, unsigned int order,
-		int preferred_nid, nodemask_t *nodemask)
+struct page *__alloc_frozen_pages_hints_noprof(gfp_t gfp, unsigned int order,
+		int preferred_nid, nodemask_t *nodemask, pghint_t *hints)
 {
 	struct page *page;
 	unsigned int alloc_flags = ALLOC_WMARK_LOW;
 	gfp_t alloc_gfp; /* The gfp_t that was actually used for allocation */
 	struct alloc_context ac = { };
+
+	if (hints)
+		*hints = (pghint_t)0;
 
 	/*
 	 * There are several places where we assume that the order value is sane
@@ -5284,6 +5287,14 @@ out:
 	kmsan_alloc_page(page, order, alloc_gfp);
 
 	return page;
+}
+EXPORT_SYMBOL(__alloc_frozen_pages_hints_noprof);
+
+struct page *__alloc_frozen_pages_noprof(gfp_t gfp, unsigned int order,
+		int preferred_nid, nodemask_t *nodemask)
+{
+	return __alloc_frozen_pages_hints_noprof(gfp, order, preferred_nid,
+						nodemask, NULL);
 }
 EXPORT_SYMBOL(__alloc_frozen_pages_noprof);
 

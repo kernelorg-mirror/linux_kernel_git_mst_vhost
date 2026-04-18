@@ -894,8 +894,12 @@ extern int user_min_free_kbytes;
 
 struct page *__alloc_frozen_pages_noprof(gfp_t, unsigned int order, int nid,
 		nodemask_t *);
+struct page *__alloc_frozen_pages_hints_noprof(gfp_t, unsigned int order,
+		int nid, nodemask_t *, pghint_t *hints);
 #define __alloc_frozen_pages(...) \
 	alloc_hooks(__alloc_frozen_pages_noprof(__VA_ARGS__))
+#define __alloc_frozen_pages_hints(...) \
+	alloc_hooks(__alloc_frozen_pages_hints_noprof(__VA_ARGS__))
 void free_frozen_pages(struct page *page, unsigned int order);
 void free_unref_folios(struct folio_batch *fbatch);
 
