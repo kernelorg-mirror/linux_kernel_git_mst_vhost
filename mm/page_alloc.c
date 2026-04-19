@@ -3000,7 +3000,7 @@ static bool free_frozen_page_commit(struct zone *zone,
  * Free a pcp page
  */
 static void __free_frozen_pages(struct page *page, unsigned int order,
-				fpi_t fpi_flags)
+				fpi_t fpi_flags, pghint_t hints)
 {
 	unsigned long UP_flags;
 	struct per_cpu_pages *pcp;
@@ -3015,6 +3015,9 @@ static void __free_frozen_pages(struct page *page, unsigned int order,
 
 	if (!__free_pages_prepare(page, order, fpi_flags))
 		return;
+
+	if (hints & PGHINT_ZEROED)
+		__SetPageZeroed(page);
 
 	/*
 	 * We only track unmovable, reclaimable and movable on pcp lists.
@@ -3051,12 +3054,18 @@ static void __free_frozen_pages(struct page *page, unsigned int order,
 
 void free_frozen_pages(struct page *page, unsigned int order)
 {
-	__free_frozen_pages(page, order, FPI_NONE);
+	__free_frozen_pages(page, order, FPI_NONE, 0);
+}
+
+void free_frozen_pages_hint(struct page *page, unsigned int order,
+			    pghint_t hints)
+{
+	__free_frozen_pages(page, order, FPI_NONE, hints);
 }
 
 void free_frozen_pages_nolock(struct page *page, unsigned int order)
 {
-	__free_frozen_pages(page, order, FPI_TRYLOCK);
+	__free_frozen_pages(page, order, FPI_TRYLOCK, 0);
 }
 
 /*
@@ -5385,7 +5394,7 @@ static void ___free_pages(struct page *page, unsigned int order,
 	struct alloc_tag *tag = pgalloc_tag_get(page);
 
 	if (put_page_testzero(page))
-		__free_frozen_pages(page, order, fpi_flags);
+		__free_frozen_pages(page, order, fpi_flags, 0);
 	else if (!head) {
 		pgalloc_tag_sub_pages(tag, (1 << order) - 1);
 		while (order-- > 0) {
@@ -5396,7 +5405,7 @@ static void ___free_pages(struct page *page, unsigned int order,
 			 */
 			clear_page_tag_ref(page + (1 << order));
 			__free_frozen_pages(page + (1 << order), order,
-					    fpi_flags);
+					    fpi_flags, 0);
 		}
 	}
 }
@@ -7879,7 +7888,7 @@ struct page *alloc_frozen_pages_nolock_noprof(gfp_t gfp_flags, int nid, unsigned
 
 	if (memcg_kmem_online() && page && (gfp_flags & __GFP_ACCOUNT) &&
 	    unlikely(__memcg_kmem_charge_page(page, alloc_gfp, order) != 0)) {
-		__free_frozen_pages(page, order, FPI_TRYLOCK);
+		__free_frozen_pages(page, order, FPI_TRYLOCK, 0);
 		page = NULL;
 	}
 	trace_mm_page_alloc(page, order, alloc_gfp, ac.migratetype);

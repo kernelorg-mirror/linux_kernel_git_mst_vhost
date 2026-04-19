@@ -1640,6 +1640,7 @@ static inline struct folio *virt_to_folio(const void *x)
 }
 
 void __folio_put(struct folio *folio);
+void __folio_put_hint(struct folio *folio, pghint_t hints);
 
 void split_page(struct page *page, unsigned int order);
 void folio_copy(struct folio *dst, struct folio *src);
@@ -1815,6 +1816,17 @@ static inline void folio_put(struct folio *folio)
 {
 	if (folio_put_testzero(folio))
 		__folio_put(folio);
+}
+
+static inline void folio_put_hint(struct folio *folio, pghint_t hints)
+{
+	if (folio_put_testzero(folio))
+		__folio_put_hint(folio, hints);
+}
+
+static inline void put_page_hint(struct page *page, pghint_t hints)
+{
+	folio_put_hint(page_folio(page), hints);
 }
 
 /**
