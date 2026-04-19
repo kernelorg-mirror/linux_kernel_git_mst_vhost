@@ -2483,7 +2483,8 @@ __rmqueue_steal(struct zone *zone, int order, int start_migratetype)
 			continue;
 
 		page = get_page_from_free_area(area, fallback_mt);
-		page_del_and_expand(zone, page, order, current_order, fallback_mt);
+		page_del_and_expand(zone, page, order, current_order,
+				    fallback_mt);
 		trace_mm_page_alloc_extfrag(page, order, current_order,
 					    start_migratetype, fallback_mt);
 		return page;
@@ -3294,7 +3295,8 @@ struct page *rmqueue_buddy(struct zone *preferred_zone, struct zone *zone,
 			 * high-order atomic allocation in the future.
 			 */
 			if (!page && (alloc_flags & (ALLOC_OOM|ALLOC_NON_BLOCK)))
-				page = __rmqueue_smallest(zone, order, MIGRATE_HIGHATOMIC);
+				page = __rmqueue_smallest(zone, order,
+							  MIGRATE_HIGHATOMIC);
 
 			if (!page) {
 				spin_unlock_irqrestore(&zone->lock, flags);
@@ -3414,7 +3416,8 @@ static struct page *rmqueue_pcplist(struct zone *preferred_zone,
 	 */
 	pcp->free_count >>= 1;
 	list = &pcp->lists[order_to_pindex(migratetype, order)];
-	page = __rmqueue_pcplist(zone, order, migratetype, alloc_flags, pcp, list);
+	page = __rmqueue_pcplist(zone, order, migratetype, alloc_flags, pcp,
+				list);
 	pcp_spin_unlock(pcp, UP_flags);
 	if (page) {
 		__count_zid_vm_events(PGALLOC, page_zonenum(page), 1 << order);
@@ -3451,7 +3454,7 @@ struct page *rmqueue(struct zone *preferred_zone,
 	}
 
 	page = rmqueue_buddy(preferred_zone, zone, order, alloc_flags,
-							migratetype);
+			     migratetype);
 
 out:
 	/* Separate test+clear to avoid unnecessary atomics */
@@ -3835,7 +3838,7 @@ static inline unsigned int gfp_to_alloc_flags_cma(gfp_t gfp_mask,
  */
 static struct page *
 get_page_from_freelist(gfp_t gfp_mask, unsigned int order, int alloc_flags,
-						const struct alloc_context *ac)
+		       const struct alloc_context *ac, pghint_t *hints)
 {
 	struct zoneref *z;
 	struct zone *zone;
@@ -4084,14 +4087,14 @@ __alloc_pages_cpuset_fallback(gfp_t gfp_mask, unsigned int order,
 	struct page *page;
 
 	page = get_page_from_freelist(gfp_mask, order,
-			alloc_flags|ALLOC_CPUSET, ac);
+			alloc_flags|ALLOC_CPUSET, ac, NULL);
 	/*
 	 * fallback to ignore cpuset restriction if our nodes
 	 * are depleted
 	 */
 	if (!page)
 		page = get_page_from_freelist(gfp_mask, order,
-				alloc_flags, ac);
+				alloc_flags, ac, NULL);
 	return page;
 }
 
@@ -4129,7 +4132,8 @@ __alloc_pages_may_oom(gfp_t gfp_mask, unsigned int order,
 	 */
 	page = get_page_from_freelist((gfp_mask | __GFP_HARDWALL) &
 				      ~__GFP_DIRECT_RECLAIM, order,
-				      ALLOC_WMARK_HIGH|ALLOC_CPUSET, ac);
+				      ALLOC_WMARK_HIGH|ALLOC_CPUSET, ac,
+				      NULL);
 	if (page)
 		goto out;
 
@@ -4227,7 +4231,8 @@ __alloc_pages_direct_compact(gfp_t gfp_mask, unsigned int order,
 
 	/* Try get a page from the freelist if available */
 	if (!page)
-		page = get_page_from_freelist(gfp_mask, order, alloc_flags, ac);
+		page = get_page_from_freelist(gfp_mask, order, alloc_flags,
+					     ac, NULL);
 
 	if (page) {
 		struct zone *zone = page_zone(page);
@@ -4477,7 +4482,8 @@ __alloc_pages_direct_reclaim(gfp_t gfp_mask, unsigned int order,
 		goto out;
 
 retry:
-	page = get_page_from_freelist(gfp_mask, order, alloc_flags, ac);
+	page = get_page_from_freelist(gfp_mask, order, alloc_flags, ac,
+				     NULL);
 
 	/*
 	 * If an allocation failed after direct reclaim, it could be because
@@ -4831,7 +4837,8 @@ retry:
 	 * The adjusted alloc_flags might result in immediate success, so try
 	 * that first
 	 */
-	page = get_page_from_freelist(gfp_mask, order, alloc_flags, ac);
+	page = get_page_from_freelist(gfp_mask, order, alloc_flags, ac,
+				     NULL);
 	if (page)
 		goto got_pg;
 
@@ -5249,7 +5256,7 @@ struct page *__alloc_frozen_pages_hints_noprof(gfp_t gfp, unsigned int order,
 	struct alloc_context ac = { };
 
 	if (hints)
-		*hints = (pghint_t)0;
+		*hints = 0;
 
 	/*
 	 * There are several places where we assume that the order value is sane
@@ -5279,7 +5286,8 @@ struct page *__alloc_frozen_pages_hints_noprof(gfp_t gfp, unsigned int order,
 	alloc_flags |= alloc_flags_nofragment(zonelist_zone(ac.preferred_zoneref), gfp);
 
 	/* First allocation attempt */
-	page = get_page_from_freelist(alloc_gfp, order, alloc_flags, &ac);
+	page = get_page_from_freelist(alloc_gfp, order, alloc_flags, &ac,
+				     hints);
 	if (likely(page))
 		goto out;
 
@@ -7855,7 +7863,8 @@ struct page *alloc_frozen_pages_nolock_noprof(gfp_t gfp_flags, int nid, unsigned
 	 * Best effort allocation from percpu free list.
 	 * If it's empty attempt to spin_trylock zone->lock.
 	 */
-	page = get_page_from_freelist(alloc_gfp, order, alloc_flags, &ac);
+	page = get_page_from_freelist(alloc_gfp, order, alloc_flags, &ac,
+				     NULL);
 
 	/* Unlike regular alloc_pages() there is no __alloc_pages_slowpath(). */
 
