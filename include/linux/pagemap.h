@@ -652,10 +652,10 @@ static inline void *detach_page_private(struct page *page)
 
 #ifdef CONFIG_NUMA
 struct folio *filemap_alloc_folio_noprof(gfp_t gfp, unsigned int order,
-		struct mempolicy *policy);
+		struct mempolicy *policy, pgoff_t ilx);
 #else
 static inline struct folio *filemap_alloc_folio_noprof(gfp_t gfp, unsigned int order,
-		struct mempolicy *policy)
+		struct mempolicy *policy, pgoff_t ilx)
 {
 	return folio_alloc_noprof(gfp, order);
 }
@@ -666,7 +666,7 @@ static inline struct folio *filemap_alloc_folio_noprof(gfp_t gfp, unsigned int o
 
 static inline struct page *__page_cache_alloc(gfp_t gfp)
 {
-	return &filemap_alloc_folio(gfp, 0, NULL)->page;
+	return &filemap_alloc_folio(gfp, 0, NULL, 0)->page;
 }
 
 static inline gfp_t readahead_gfp_mask(struct address_space *x)

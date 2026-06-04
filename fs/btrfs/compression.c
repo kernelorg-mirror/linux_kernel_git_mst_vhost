@@ -452,7 +452,7 @@ static noinline int add_ra_bio_pages(struct inode *inode,
 		masked_constraint_gfp = mapping_gfp_constraint(mapping, constraint_gfp);
 		masked_constraint_gfp |= __GFP_NOWARN;
 
-		folio = filemap_alloc_folio(masked_constraint_gfp, 0, NULL);
+		folio = filemap_alloc_folio(masked_constraint_gfp, 0, NULL, 0);
 		if (!folio)
 			break;
 
