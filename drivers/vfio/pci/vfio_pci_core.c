@@ -1136,6 +1136,15 @@ int vfio_pci_ioctl_get_region_info(struct vfio_device *core_vdev,
 			info->size = roundup_pow_of_two(pdev->romlen);
 		}
 
+		if (!info->size) {
+			size_t acpi_size = vfio_pci_rom_acpi_size(vdev);
+
+			if (acpi_size) {
+				info->flags = VFIO_REGION_INFO_FLAG_READ;
+				info->size = roundup_pow_of_two(acpi_size);
+			}
+		}
+
 		break;
 	}
 	case VFIO_PCI_VGA_REGION_INDEX:

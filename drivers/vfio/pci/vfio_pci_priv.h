@@ -44,6 +44,15 @@ ssize_t vfio_pci_config_rw_single(struct vfio_pci_core_device *vdev,
 ssize_t vfio_pci_bar_rw(struct vfio_pci_core_device *vdev, char __user *buf,
 			size_t count, loff_t *ppos, bool iswrite);
 
+#ifdef CONFIG_ACPI
+size_t vfio_pci_rom_acpi_size(struct vfio_pci_core_device *vdev);
+#else
+static inline size_t vfio_pci_rom_acpi_size(struct vfio_pci_core_device *vdev)
+{
+	return 0;
+}
+#endif
+
 #ifdef CONFIG_VFIO_PCI_VGA
 ssize_t vfio_pci_vga_rw(struct vfio_pci_core_device *vdev, char __user *buf,
 			size_t count, loff_t *ppos, bool iswrite);

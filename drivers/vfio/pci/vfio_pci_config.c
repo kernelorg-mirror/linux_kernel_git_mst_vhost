@@ -504,9 +504,11 @@ static void vfio_bar_fixup(struct vfio_pci_core_device *vdev)
 	vbar = (__le32 *)&vdev->vconfig[PCI_ROM_ADDRESS];
 
 	/*
-	 * NB. REGION_INFO will have reported zero size if we weren't able
-	 * to read the ROM, but we still return the actual BAR size here if
-	 * it exists (or the shadow ROM space).
+	 * NB. When the ROM is readable, REGION_INFO reports the BAR size;
+	 * when it is not, it reports the platform ROM image size rounded
+	 * up to a power of two.  We still return the actual BAR size here
+	 * if it exists (or the shadow ROM space), so the ROM BAR and the
+	 * region can differ when the BAR is unreadable.
 	 */
 	if (pci_resource_start(pdev, PCI_ROM_RESOURCE)) {
 		mask = ~(pci_resource_len(pdev, PCI_ROM_RESOURCE) - 1);
@@ -517,7 +519,15 @@ static void vfio_bar_fixup(struct vfio_pci_core_device *vdev)
 		mask |= PCI_ROM_ADDRESS_ENABLE;
 		*vbar &= cpu_to_le32((u32)mask);
 	} else {
-		*vbar = 0;
+		size_t rom_size = vfio_pci_rom_acpi_size(vdev);
+
+		if (rom_size) {
+			mask = ~(roundup_pow_of_two(rom_size) - 1);
+			mask |= PCI_ROM_ADDRESS_ENABLE;
+			*vbar &= cpu_to_le32((u32)mask);
+		} else {
+			*vbar = 0;
+		}
 	}
 
 	vdev->bardirty = false;

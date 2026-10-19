@@ -10,6 +10,7 @@
  * Author: Tom Lyon, pugs@cisco.com
  */
 
+#include <linux/acpi.h>
 #include <linux/fs.h>
 #include <linux/pci.h>
 #include <linux/uaccess.h>
@@ -211,6 +212,163 @@ int vfio_pci_core_setup_barmap(struct vfio_pci_core_device *vdev, int bar)
 }
 EXPORT_SYMBOL_GPL(vfio_pci_core_setup_barmap);
 
+#ifdef CONFIG_ACPI
+
+/* No known option ROM comes close; caps the _ROM size probe. */
+#define VFIO_PCI_ROM_MAX_SIZE		(16 * 1024 * 1024)
+
+static acpi_handle vfio_pci_acpi_rom_handle(struct pci_dev *pdev)
+{
+	acpi_handle handle, rom_handle;
+
+	handle = ACPI_HANDLE(&pdev->dev);
+	if (!handle)
+		return NULL;
+
+	if (ACPI_FAILURE(acpi_get_handle(handle, "_ROM", &rom_handle)))
+		return NULL;
+
+	return rom_handle;
+}
+
+static int vfio_pci_acpi_rom_read(acpi_handle rom_handle, void *buf,
+				  loff_t offset, size_t length)
+{
+	acpi_status status;
+	union acpi_object rom_arg[2];
+	struct acpi_object_list rom_args;
+	struct acpi_buffer buffer = { ACPI_ALLOCATE_BUFFER, NULL };
+	union acpi_object *obj;
+
+	rom_args.count = 2;
+	rom_args.pointer = rom_arg;
+	rom_arg[0].type = ACPI_TYPE_INTEGER;
+	rom_arg[0].integer.value = offset;
+	rom_arg[1].type = ACPI_TYPE_INTEGER;
+	rom_arg[1].integer.value = length;
+
+	status = acpi_evaluate_object(rom_handle, NULL, &rom_args, &buffer);
+	if (ACPI_FAILURE(status))
+		return -EIO;
+
+	obj = buffer.pointer;
+	if (obj->type != ACPI_TYPE_BUFFER) {
+		kfree(buffer.pointer);
+		return -EIO;
+	}
+
+	length = min(length, (size_t)obj->buffer.length);
+	memcpy(buf, obj->buffer.pointer, length);
+	kfree(buffer.pointer);
+	return length;
+}
+
+/*
+ * _ROM returns at most 4K per call; read whole pages until a short
+ * chunk marks the end of the image.
+ */
+static size_t vfio_pci_acpi_rom_probe(struct vfio_pci_core_device *vdev)
+{
+	acpi_handle rom_handle = vfio_pci_acpi_rom_handle(vdev->pdev);
+	void *buf;
+	size_t size = 0;
+	int ret;
+
+	if (!rom_handle)
+		return 0;
+
+	buf = kmalloc(0x1000, GFP_KERNEL);
+	if (!buf)
+		return 0;
+
+	do {
+		ret = vfio_pci_acpi_rom_read(rom_handle, buf, size, 0x1000);
+		if (ret > 0)
+			size += ret;
+	} while (ret == 0x1000 && size < VFIO_PCI_ROM_MAX_SIZE);
+
+	kfree(buf);
+	return size;
+}
+
+/*
+ * The image behind _ROM is static firmware data, so probe it once and
+ * cache the result.  Racing callers may probe concurrently, but they
+ * store the same value.
+ */
+size_t vfio_pci_rom_acpi_size(struct vfio_pci_core_device *vdev)
+{
+	/* Read the flag before the size: pairs with the store below. */
+	if (!smp_load_acquire(&vdev->rom_acpi_probed)) {
+		vdev->rom_acpi_size = vfio_pci_acpi_rom_probe(vdev);
+		/* Store the size before the flag: pairs with the load above. */
+		smp_store_release(&vdev->rom_acpi_probed, true);
+	}
+
+	return vdev->rom_acpi_size;
+}
+
+/*
+ * Serve the ROM region from _ROM one page at a time: the method
+ * returns at most 4K, and some implementations only accept
+ * page-aligned requests.  Reads past the image return 0xff, like the
+ * unused space of a ROM BAR.  The caller has probed the image and
+ * cached its size in vdev.
+ */
+static ssize_t vfio_pci_acpi_rom_rw(struct vfio_pci_core_device *vdev,
+				    char __user *buf, size_t count,
+				    loff_t pos, bool iswrite)
+{
+	acpi_handle rom_handle = vfio_pci_acpi_rom_handle(vdev->pdev);
+	size_t rom_size = vdev->rom_acpi_size;
+	void *chunk;
+	ssize_t done = 0;
+	int ret;
+
+	if (iswrite)
+		return -EINVAL;
+
+	if (!rom_handle || !rom_size)
+		return -ENODEV;
+
+	chunk = kmalloc(0x1000, GFP_KERNEL);
+	if (!chunk)
+		return -ENOMEM;
+
+	while (count) {
+		size_t off = pos & (0x1000 - 1);
+		size_t n = min_t(size_t, count, 0x1000 - off);
+		size_t image = 0;
+
+		if (pos - off < rom_size) {
+			ret = vfio_pci_acpi_rom_read(rom_handle, chunk,
+						     pos - off, 0x1000);
+			if (ret <= 0) {
+				if (ret < 0 && !done)
+					done = ret;
+				break;
+			}
+			image = min_t(size_t, ret, rom_size - (pos - off));
+		}
+
+		memset(chunk + image, 0xff, 0x1000 - image);
+
+		if (copy_to_user(buf, chunk + off, n)) {
+			done = done ? done : -EFAULT;
+			break;
+		}
+
+		buf += n;
+		pos += n;
+		done += n;
+		count -= n;
+	}
+
+	kfree(chunk);
+	return done;
+}
+#endif /* CONFIG_ACPI */
+
 ssize_t vfio_pci_bar_rw(struct vfio_pci_core_device *vdev, char __user *buf,
 			size_t count, loff_t *ppos, bool iswrite)
 {
@@ -221,16 +379,23 @@ ssize_t vfio_pci_bar_rw(struct vfio_pci_core_device *vdev, char __user *buf,
 	resource_size_t end;
 	void __iomem *io = NULL;
 	bool rom_is_mapped = false;
+	size_t rom_size = 0;
 	struct resource *res = &vdev->pdev->resource[bar];
 	ssize_t done;
 	enum vfio_pci_io_width max_width = VFIO_PCI_IO_WIDTH_8;
 
-	if (pci_resource_start(pdev, bar))
+	if (pci_resource_start(pdev, bar)) {
 		end = pci_resource_len(pdev, bar);
-	else if (bar == PCI_ROM_RESOURCE && pdev->rom && pdev->romlen)
+	} else if (bar == PCI_ROM_RESOURCE && pdev->rom && pdev->romlen) {
 		end = roundup_pow_of_two(pdev->romlen);
-	else
+	} else if (bar == PCI_ROM_RESOURCE) {
+		rom_size = vfio_pci_rom_acpi_size(vdev);
+		if (!rom_size)
+			return -EINVAL;
+		end = roundup_pow_of_two(rom_size);
+	} else {
 		return -EINVAL;
+	}
 
 	if (bar == PCI_ROM_RESOURCE) {
 		/*
@@ -247,7 +412,8 @@ ssize_t vfio_pci_bar_rw(struct vfio_pci_core_device *vdev, char __user *buf,
 		/*
 		 * The BAR can also exist but be unreadable, e.g. on a GPU
 		 * that was never POSTed.  Fall back to the ROM image stashed
-		 * by the boot loader; the region then follows the image size
+		 * by the boot loader (pdev->rom) or provided by the platform
+		 * firmware (_ROM); the region then follows the image size
 		 * rather than the BAR, so bound the access only after the
 		 * source of the ROM content is known.
 		 */
@@ -256,12 +422,27 @@ ssize_t vfio_pci_bar_rw(struct vfio_pci_core_device *vdev, char __user *buf,
 			io = ioremap(pdev->rom, pdev->romlen);
 			x_start = pdev->romlen;
 		}
+
+		if (!io && !(pdev->rom && pdev->romlen)) {
+			rom_size = vfio_pci_rom_acpi_size(vdev);
+			if (rom_size)
+				end = roundup_pow_of_two(rom_size);
+		}
 	}
 
 	if (pos >= end)
 		return -EINVAL;
 
 	count = min(count, (size_t)(end - pos));
+
+#ifdef CONFIG_ACPI
+	if (bar == PCI_ROM_RESOURCE && rom_size) {
+		done = vfio_pci_acpi_rom_rw(vdev, buf, count, pos, iswrite);
+		if (done >= 0)
+			*ppos += done;
+		return done;
+	}
+#endif
 
 	if (bar == PCI_ROM_RESOURCE) {
 		if (!io)

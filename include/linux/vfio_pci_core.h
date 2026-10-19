@@ -115,6 +115,8 @@ struct vfio_pci_core_device {
 	u16			msix_size;
 	u32			msix_offset;
 	u32			rbar[7];
+	size_t			rom_acpi_size; /* _ROM image size, if any */
+	bool			rom_acpi_probed;
 	bool			has_dyn_msix:1;
 	bool			pci_2_3:1;
 	bool			virq_disabled:1;
