@@ -1128,7 +1128,9 @@ int vfio_pci_ioctl_get_region_info(struct vfio_device *core_vdev,
 				pci_unmap_rom(pdev, io);
 			}
 			vfio_pci_memory_unlock_and_restore(vdev, cmd);
-		} else if (pdev->rom && pdev->romlen) {
+		}
+
+		if (!info->size && pdev->rom && pdev->romlen) {
 			info->flags = VFIO_REGION_INFO_FLAG_READ;
 			/* Report BAR size as power of two. */
 			info->size = roundup_pow_of_two(pdev->romlen);

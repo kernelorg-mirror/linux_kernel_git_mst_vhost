@@ -219,7 +219,8 @@ ssize_t vfio_pci_bar_rw(struct vfio_pci_core_device *vdev, char __user *buf,
 	int bar = VFIO_PCI_OFFSET_TO_INDEX(*ppos);
 	size_t x_start = 0, x_end = 0;
 	resource_size_t end;
-	void __iomem *io;
+	void __iomem *io = NULL;
+	bool rom_is_mapped = false;
 	struct resource *res = &vdev->pdev->resource[bar];
 	ssize_t done;
 	enum vfio_pci_io_width max_width = VFIO_PCI_IO_WIDTH_8;
@@ -231,11 +232,6 @@ ssize_t vfio_pci_bar_rw(struct vfio_pci_core_device *vdev, char __user *buf,
 	else
 		return -EINVAL;
 
-	if (pos >= end)
-		return -EINVAL;
-
-	count = min(count, (size_t)(end - pos));
-
 	if (bar == PCI_ROM_RESOURCE) {
 		/*
 		 * The ROM can fill less space than the BAR, so we start the
@@ -244,10 +240,30 @@ ssize_t vfio_pci_bar_rw(struct vfio_pci_core_device *vdev, char __user *buf,
 		 */
 		if (pci_resource_start(pdev, bar)) {
 			io = pci_map_rom(pdev, &x_start);
-		} else {
+			if (io)
+				rom_is_mapped = true;
+		}
+
+		/*
+		 * The BAR can also exist but be unreadable, e.g. on a GPU
+		 * that was never POSTed.  Fall back to the ROM image stashed
+		 * by the boot loader; the region then follows the image size
+		 * rather than the BAR, so bound the access only after the
+		 * source of the ROM content is known.
+		 */
+		if (!io && pdev->rom && pdev->romlen) {
+			end = roundup_pow_of_two(pdev->romlen);
 			io = ioremap(pdev->rom, pdev->romlen);
 			x_start = pdev->romlen;
 		}
+	}
+
+	if (pos >= end)
+		return -EINVAL;
+
+	count = min(count, (size_t)(end - pos));
+
+	if (bar == PCI_ROM_RESOURCE) {
 		if (!io)
 			return -ENOMEM;
 		x_end = end;
@@ -283,7 +299,7 @@ ssize_t vfio_pci_bar_rw(struct vfio_pci_core_device *vdev, char __user *buf,
 		*ppos += done;
 
 	if (bar == PCI_ROM_RESOURCE) {
-		if (pci_resource_start(pdev, bar))
+		if (rom_is_mapped)
 			pci_unmap_rom(pdev, io);
 		else
 			iounmap(io);
